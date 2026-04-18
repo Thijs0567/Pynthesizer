@@ -31,40 +31,71 @@ Click keys to play. That's it.
 ## What It Does
 
 Each note plays as a pure sine wave with:
-- Velocity-based volume (from MIDI/click)
-- 10ms attack, 50ms release envelope
-- Pitch bend support (±2 semitones)
-- Voice stealing when exceeding 16 simultaneous notes
+- **ADSR Envelope**: Fully customizable Attack, Decay, Sustain, Release times
+- **Velocity-based Volume**: Dynamic response from MIDI/click (0–127)
+- **Pitch Bend Support**: ±2 semitones (or custom range)
+- **Voice Stealing**: Oldest-note priority when exceeding max voices
+- **Smooth Retrigger**: No clicks when re-playing the same note
+- **Compressor + Limiter**: 
+  - RMS compressor with soft knee for e-piano character
+  - Peak limiter prevents clipping while preserving dynamics
+- **Effects Chain**:
+  - **Low Pass Filter**: Variable cutoff and Q (resonance)
+  - **Delay**: Configurable time, feedback, and wet/dry mix
+  - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
+- **Master Volume**: 0.0–1.0 scaling with no clipping
 
 ## Architecture
 
 ```
-MIDI/GUI Input → Synthesizer (voice management) 
-    → Voice (sine generation + envelope) 
-    → Mixing → Audio Engine → Speakers
+MIDI/GUI Input → Synthesizer (voice management)
+    → Voice Pool (sine generation + ADSR envelope per note)
+    → Voice Mixer (sum active voices)
+    → Compressor (RMS stage + peak limiter)
+    → Effects Chain (LPF → Delay → Reverb)
+    → Master Volume
+    → Audio Engine → Speakers
 ```
 
-**Key Design**: Audio synthesis runs in real-time callback. MIDI polling runs in separate thread to prevent glitches.
+**Real-time Design**: Audio synthesis runs in callback (zero allocations). MIDI polling runs in separate thread to prevent glitches. Dynamics processor uses per-sample limiting (no staircase artifacts) and smooth block-wise gain ramps.
 
 ## Modules
 
 - `gui_main.py` - GUI entry point
 - `piano_gui.py` - Tkinter piano interface
-- `synthesizer.py` - Core synthesis engine
-- `voice.py` - Individual sine wave oscillator
+- `synthesizer.py` - Core synthesis engine & dynamics processor
+- `voice.py` - Individual sine wave oscillator + ADSR
+- `effects.py` - Effect chain (Master Volume, Low Pass Filter, Reverb, Delay)
 - `midi_handler.py` - MIDI input handling
 - `audio_engine.py` - Real-time audio output
 
-## Configuration
+## Configuration & API
 
-Edit `src/main.py`:
-- `SAMPLE_RATE` - Default: 44100 Hz
-- `BLOCKSIZE` - Default: 2048 samples
-- `MAX_VOICES` - Default: 16
+**Synthesizer Parameters** (after instantiation):
 
-Edit `src/voice.py`:
-- `ATTACK_TIME` - Default: 10ms
-- `RELEASE_TIME` - Default: 50ms
+```python
+synth = Synthesizer(sample_rate=44100, max_voices=16)
+
+# ADSR Envelope
+synth.set_adsr(attack=0.01, decay=0.1, sustain=0.7, release=0.3)
+
+# Effects
+synth.set_volume(0.8)                           # 0.0–1.0
+synth.set_lpf(cutoff_hz=10000, q=0.707)        # Low Pass Filter
+synth.set_reverb(room_size=0.5, damping=0.5, wet=0.3)
+synth.set_delay(delay_ms=250, feedback=0.4, wet=0.2)
+
+# MIDI/Control
+synth._on_note_on(note=60, velocity=100)
+synth._on_note_off(note=60)
+synth._on_pitch_bend(value)                     # -8192 to +8191
+```
+
+**Compressor Settings** (tweak in `src/synthesizer.py`):
+- `_comp_threshold_db` - Compression knee threshold (default: -3 dB)
+- `_comp_ratio` - Compression ratio (default: 4:1)
+- `_comp_knee_db` - Knee width (default: 6 dB)
+- `_lim_threshold` - Peak limiter ceiling (default: 0.90)
 
 ## Requirements
 
@@ -74,9 +105,9 @@ Edit `src/voice.py`:
 
 ## Known Limitations
 
-- Sine waves only
-- No ADSR customization
-- No filtering or effects
+- **Sine waves only** — no sawtooth, square, or other waveforms
+- **Mono output** — no stereo, surround, or spatial effects
+- **Fixed tuning** — A4 = 440 Hz (no alternate tuning systems)
 
 ## License
 
