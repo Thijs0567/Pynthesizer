@@ -35,7 +35,8 @@ class PianoGUI:
                  on_lpf_change: Callable = None,
                  on_reverb_change: Callable = None,
                  on_delay_change: Callable = None,
-                 on_wavetable_change: Callable = None):
+                 on_wavetable_change: Callable = None,
+                 on_panic: Callable = None):
         """
         Initialize the piano GUI.
         
@@ -54,6 +55,7 @@ class PianoGUI:
         self.on_reverb_change = on_reverb_change or (lambda room, damp, wet: None)
         self.on_delay_change  = on_delay_change  or (lambda ms, fb, wet: None)
         self.on_wavetable_change = on_wavetable_change or (lambda wt: None)
+        self.on_panic = on_panic or (lambda: None)
 
         # Wavetable state (16 harmonic amplitudes)
         self.wavetable = np.zeros(16, dtype=np.float32)
@@ -80,10 +82,11 @@ class PianoGUI:
         
         # Setup window
         self.root.title("PythonSynth Piano with ADSR")
-        num_white_keys = (self.END_OCTAVE - self.START_OCTAVE + 1) * 7 + 1  # +1 for trailing C
-        window_width = max(1200, num_white_keys * self.WHITE_KEY_WIDTH + 200)
-        self.root.geometry(f"{window_width}x720")
+        self.root.geometry("1260x900")
+        self.root.resizable(False, False)
         self.root.configure(bg='#333333')
+
+        num_white_keys = (self.END_OCTAVE - self.START_OCTAVE + 1) * 7 + 1
 
         # Title
         title_frame = tk.Frame(root, bg='#333333')
@@ -91,31 +94,45 @@ class PianoGUI:
         tk.Label(title_frame, text="PythonSynth", font=("Arial", 16, "bold"),
                 fg='white', bg='#333333').pack()
 
-        # Top section row: Envelope | Filter | Effects
-        top_row = tk.Frame(root, bg='#333333')
-        top_row.pack(pady=6, padx=10, fill=tk.X)
+        # Row 1: [ADSR + Osc centered] [LPF + Master right-aligned]
+        row1 = tk.Frame(root, bg='#333333')
+        row1.pack(pady=(6, 2), padx=10, fill=tk.X)
 
-        self._create_adsr_controls(top_row)
-        self._create_filter_controls(top_row)
-        self._create_oscillator_controls(top_row)
-        self._create_effects_controls(top_row)
+        row1_right = tk.Frame(row1, bg='#333333')
+        row1_right.pack(side=tk.RIGHT, padx=4, fill=tk.Y)
+        row1_right_inner = tk.Frame(row1_right, bg='#333333')
+        row1_right_inner.pack(anchor='e', fill=tk.Y, expand=True)
+        self._create_filter_controls(row1_right_inner)
+        self._create_master_section(row1_right_inner)
 
-        # Bottom row: piano on left, master section on right
-        content_frame = tk.Frame(root, bg='#333333')
-        content_frame.pack(pady=8, padx=10, fill=tk.BOTH, expand=True)
+        row1_center = tk.Frame(row1, bg='#333333')
+        row1_center.pack(side=tk.LEFT, expand=True)
+        row1_inner = tk.Frame(row1_center, bg='#333333')
+        row1_inner.pack(anchor='center')
+        self._create_adsr_controls(row1_inner)
+        self._create_oscillator_controls(row1_inner)
 
-        left_frame = tk.Frame(content_frame, bg='#333333')
-        left_frame.pack(side=tk.LEFT, padx=5)
+        # Row 2: Effects (centered)
+        row2 = tk.Frame(root, bg='#333333')
+        row2.pack(pady=(2, 6), padx=10)
+        self._create_effects_controls(row2)
 
-        piano_row = tk.Frame(left_frame, bg='#333333')
+        # Row 3: Piano + Transpose (centered)
+        piano_outer = tk.Frame(root, bg='#333333')
+        piano_outer.pack(pady=4, fill=tk.X)
+
+        piano_center = tk.Frame(piano_outer, bg='#333333')
+        piano_center.pack(anchor='center')
+
+        piano_row = tk.Frame(piano_center, bg='#333333')
         piano_row.pack()
 
         self._create_transpose_slider(piano_row)
 
-        canvas_width = max(800, num_white_keys * self.WHITE_KEY_WIDTH + 20)
+        canvas_width = num_white_keys * self.WHITE_KEY_WIDTH + 20
         self.canvas = Canvas(piano_row, bg='#333333', highlightthickness=0,
                            width=canvas_width, height=220)
-        self.canvas.pack(side=tk.LEFT, pady=10)
+        self.canvas.pack(side=tk.LEFT, pady=6)
 
         self.canvas.bind('<Button-1>', self._on_mouse_down)
         self.canvas.bind('<ButtonRelease-1>', self._on_mouse_up)
@@ -125,14 +142,11 @@ class PianoGUI:
         self._bind_keyboard()
         self._draw_kb_labels()
 
-        info_frame = tk.Frame(left_frame, bg='#333333')
-        info_frame.pack(pady=5)
+        info_frame = tk.Frame(piano_center, bg='#333333')
+        info_frame.pack(pady=2)
         self.info_label = tk.Label(info_frame, text="Active voices: 0",
                                    font=("Arial", 10), fg='#00AA00', bg='#333333')
         self.info_label.pack()
-
-        # Master section (Volume + Level meter) on the right
-        self._create_master_section(content_frame)
     
     # QWERTY key → semitone offset within the mapped octave
     # White keys: A=C, S=D, D=E, F=F, G=G, H=A, J=B, K=C(+1), L=D(+1)
@@ -149,6 +163,7 @@ class PianoGUI:
 
         self.root.bind('<KeyPress>',   self._on_key_press)
         self.root.bind('<KeyRelease>', self._on_key_release)
+        self.root.bind('<space>',      lambda _: self._on_panic())
 
     def _kb_shift(self, direction: int):
         """Shift kb_octave by direction (±1). If at limit, transpose by ±12 instead."""
@@ -157,12 +172,14 @@ class PianoGUI:
             self.kb_octave = new_oct
             self._draw_kb_labels()
         else:
-            # At octave limit — try transposing
-            new_transpose = self.transpose + direction * 12
-            if -24 <= new_transpose <= 24:
-                self.transpose = new_transpose
-                self.transpose_scale.set(self.transpose)
-                self.transpose_label.config(text=f"{self.transpose:+d} st")
+            # At octave limit — try transposing by one octave
+            cur_octs = self.transpose_scale.get()
+            new_octs = cur_octs + direction
+            if -2 <= new_octs <= 2:
+                self.transpose_scale.set(new_octs)
+                self.transpose = new_octs * 12
+                self.transpose_label.config(text=f"{new_octs:+d} oct")
+                self._draw_c_labels()
 
     def _on_key_press(self, event):
         ch = event.char.lower() if event.char else ''
@@ -179,9 +196,10 @@ class PianoGUI:
             raw_note = (self.kb_octave + extra_oct) * 12 + (semitone % 12)
             note = self._apply_transpose(raw_note)
             self.on_note_on(note, 100)
-            # Highlight the visual key (use raw note to find canvas key)
             if raw_note in self.note_key_map:
-                self._highlight_key(self.note_key_map[raw_note], True)
+                key_id = self.note_key_map[raw_note]
+                self.active_keys[raw_note] = key_id
+                self._highlight_key(key_id, True)
 
     def _on_key_release(self, event):
         ch = event.char.lower() if event.char else ''
@@ -192,8 +210,8 @@ class PianoGUI:
             raw_note = (self.kb_octave + extra_oct) * 12 + (semitone % 12)
             note = self._apply_transpose(raw_note)
             self.on_note_off(note)
-            if raw_note in self.note_key_map:
-                self._highlight_key(self.note_key_map[raw_note], False)
+            if raw_note in self.active_keys:
+                self._highlight_key(self.active_keys.pop(raw_note), False)
 
     def _draw_kb_labels(self):
         """Draw (or redraw) QWERTY shortcut labels on the piano canvas keys."""
@@ -282,10 +300,10 @@ class PianoGUI:
 
         self.envelope_canvas = Canvas(section, bg='#1a1a1a', highlightthickness=1,
                                       highlightbackground='#555555',
-                                      width=360, height=120)
+                                      width=300, height=100)
         self.envelope_canvas.pack(padx=10, pady=(2, 8))
 
-        self._draw_envelope()
+        self.envelope_canvas.bind('<Configure>', lambda _: self._draw_envelope())
 
 
     def _apply_transpose(self, raw_note: int) -> int:
@@ -298,25 +316,27 @@ class PianoGUI:
         tk.Label(frame, text="Transpose", font=("Arial", 8, "bold"),
                  fg='#AAAAFF', bg='#444444').pack(pady=(3, 0))
 
-        # from_=24 at top (higher pitch), to=-24 at bottom
+        # from_=2 at top (higher pitch), to=-2 at bottom; each step = 1 octave
         self.transpose_scale = Scale(
-            frame, from_=24, to=-24, orient=tk.VERTICAL,
+            frame, from_=2, to=-2, orient=tk.VERTICAL,
             bg='#555555', fg='white', length=200,
-            tickinterval=12, resolution=1,
+            tickinterval=1, resolution=1,
             command=self._on_transpose_changed,
         )
         self.transpose_scale.set(0)
         self.transpose_scale.pack(padx=5)
 
         self.transpose_label = tk.Label(
-            frame, text="0 st", font=("Arial", 8),
+            frame, text="0 oct", font=("Arial", 8),
             fg='#AAAAFF', bg='#444444',
         )
         self.transpose_label.pack(pady=(0, 3))
 
     def _on_transpose_changed(self, _):
-        self.transpose = self.transpose_scale.get()
-        self.transpose_label.config(text=f"{self.transpose:+d} st")
+        octs = self.transpose_scale.get()
+        self.transpose = octs * 12
+        self.transpose_label.config(text=f"{octs:+d} oct")
+        self._draw_c_labels()
 
     def _on_adsr_changed(self, value):
         """Handle ADSR slider changes."""
@@ -342,18 +362,22 @@ class PianoGUI:
         knob_row = tk.Frame(section, bg='#444444')
         knob_row.pack(padx=10, pady=(2, 8))
 
+        def _cutoff_fmt(v):
+            hz = 20.0 * (1000.0 ** (v / 100.0))
+            return f"{hz:.0f} Hz" if hz < 1000 else f"{hz/1000:.2g} kHz"
+
         self.lpf_cutoff_scale = Knob(knob_row, from_=0, to=100, resolution=1,
-                                     label="Cutoff", value_format="{:.0f}",
+                                     label="Cutoff", value_format=_cutoff_fmt,
                                      initial=100,
                                      command=self._on_lpf_changed)
         self.lpf_cutoff_scale.set(100)
         self.lpf_cutoff_scale.grid(row=0, column=0, padx=6, pady=4)
 
-        self.lpf_q_scale = Knob(knob_row, from_=5, to=40, resolution=1,
+        self.lpf_q_scale = Knob(knob_row, from_=0.5, to=12.0, resolution=0.1,
                                 label="Reso", value_format="Q {:.1f}",
-                                initial=7,
+                                initial=0.7,
                                 command=self._on_lpf_changed)
-        self.lpf_q_scale.set(7)
+        self.lpf_q_scale.set(0.7)
         self.lpf_q_scale.grid(row=0, column=1, padx=6, pady=4)
 
     def _create_effects_controls(self, parent):
@@ -421,40 +445,86 @@ class PianoGUI:
         self.delay_wet_scale.grid(row=0, column=2, padx=5, pady=6)
 
     def _create_master_section(self, parent):
-        """Master section: Volume knob above vertical level meter."""
+        """Master section: Volume knob + compact vertical level meter."""
+        METER_W, METER_H, MARGIN = 28, 120, 3
+
         section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        section.pack(side=tk.RIGHT, padx=6, pady=4, fill=tk.Y)
+        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
 
         tk.Label(section, text="Master", font=("Arial", 11, "bold"),
-                 fg='white', bg='#444444').pack(pady=(6, 4))
+                 fg='white', bg='#444444').pack(pady=(6, 2))
+
+        tk.Button(section, text="PANIC", font=("Arial", 8, "bold"),
+                  fg='white', bg='#882222', activebackground='#FF3333',
+                  relief=tk.RAISED, bd=2, padx=6, pady=2,
+                  command=self._on_panic).pack(pady=(0, 4))
 
         self.volume_scale = Knob(section, from_=0, to=100, resolution=1,
                                  label="Volume", value_format="{:.0f}%",
-                                 size=64, initial=80,
+                                 size=56, initial=70,
                                  command=self._on_volume_changed)
-        self.volume_scale.set(80)
-        self.volume_scale.pack(pady=(0, 6))
+        self.volume_scale.set(70)
+        self.volume_scale.pack(pady=(0, 4))
+        self._on_volume_changed(None)
 
-        meter_row = tk.Frame(section, bg='#444444')
-        meter_row.pack(padx=8, pady=(0, 8))
-
-        self.gain_canvas = Canvas(meter_row, bg='#1a1a1a', highlightthickness=1,
+        self.gain_canvas = Canvas(section, bg='#1a1a1a', highlightthickness=1,
                                   highlightbackground='#555555',
-                                  width=50, height=220)
-        self.gain_canvas.pack(side=tk.LEFT, padx=(0, 6))
+                                  width=METER_W, height=METER_H)
+        self.gain_canvas.pack(padx=8, pady=(0, 4))
 
-        self.level_label = tk.Label(meter_row, text="0%\n(0.00)",
-                                    font=("Arial", 9), fg='#00AA00', bg='#444444',
+        self.level_label = tk.Label(section, text="0%",
+                                    font=("Arial", 8), fg='#00AA00', bg='#444444',
                                     justify=tk.CENTER)
-        self.level_label.pack(side=tk.LEFT)
+        self.level_label.pack(pady=(0, 6))
+
+        # Pre-create persistent canvas items to avoid flicker from delete/recreate
+        mh = METER_H - MARGIN * 2
+        clip_y  = MARGIN + mh * (1.0 - 0.9)
+        warn_y  = MARGIN + mh * (1.0 - 0.7)
+        self._m = MARGIN
+        self._mw = METER_W
+        self._mh = METER_H
+
+        self._gc_bg    = self.gain_canvas.create_rectangle(MARGIN, MARGIN, METER_W - MARGIN, METER_H - MARGIN,
+                                                           fill='#0a0a0a', outline='#555555')
+        self._gc_warn  = self.gain_canvas.create_rectangle(MARGIN, clip_y, METER_W - MARGIN, warn_y,
+                                                           fill='#3a3a00', outline='')
+        self._gc_clip  = self.gain_canvas.create_rectangle(MARGIN, MARGIN, METER_W - MARGIN, clip_y,
+                                                           fill='#3a0000', outline='')
+        self._gc_bar   = self.gain_canvas.create_rectangle(MARGIN, METER_H - MARGIN, METER_W - MARGIN, METER_H - MARGIN,
+                                                           fill='#00FF00', outline='')
+        self._gc_l70   = self.gain_canvas.create_line(MARGIN, warn_y, METER_W - MARGIN, warn_y,
+                                                      fill='#555555', width=1)
+        self._gc_l95   = self.gain_canvas.create_line(MARGIN, MARGIN + mh * (1.0 - 0.95), METER_W - MARGIN,
+                                                      MARGIN + mh * (1.0 - 0.95), fill='#555555', width=1)
+
+    def midi_note_on(self, note: int, velocity: int):
+        self.on_note_on(note, velocity)
+        if note in self.note_key_map:
+            key_id = self.note_key_map[note]
+            self.active_keys[note] = key_id
+            self._highlight_key(key_id, True)
+
+    def midi_note_off(self, note: int):
+        self.on_note_off(note)
+        if note in self.active_keys:
+            self._highlight_key(self.active_keys.pop(note), False)
+
+    def _on_panic(self):
+        self.on_panic()
+        for key_id in list(self.active_keys.values()):
+            self._highlight_key(key_id, False)
+        self.active_keys.clear()
+        self.mouse_down_note = None
+        self._kb_held.clear()
 
     def _on_volume_changed(self, _):
-        self.on_volume_change(self.volume_scale.get() / 100.0)
+        self.on_volume_change(self.volume_scale.get() / 100.0 * (3.0 / 7.0))
 
     def _on_lpf_changed(self, _):
         t = self.lpf_cutoff_scale.get() / 100.0
         cutoff = 20.0 * (1000.0 ** t)  # log mapping: 20 Hz → 20000 Hz
-        q = self.lpf_q_scale.get() / 10.0
+        q = self.lpf_q_scale.get()
         self.on_lpf_change(cutoff, q)
 
     def _on_reverb_changed(self, _):
@@ -549,7 +619,7 @@ class PianoGUI:
 
         self.waveform_canvas = tk.Canvas(
             section, bg='#1a1a1a', highlightthickness=1,
-            highlightbackground='#555555', width=380, height=80,
+            highlightbackground='#555555', width=320, height=80,
         )
         self.waveform_canvas.pack(padx=8, pady=(2, 4))
 
@@ -570,7 +640,7 @@ class PianoGUI:
             slider.grid(row=0, column=k, padx=1)
             self.harmonic_sliders.append(slider)
 
-        self._draw_waveform()
+        self.waveform_canvas.bind('<Configure>', lambda _: self._draw_waveform())
 
     def _on_harmonic_changed(self, index: int, value: float):
         self.wavetable[index] = float(value)
@@ -581,7 +651,7 @@ class PianoGUI:
         """Draw one cycle of the current wavetable waveform on the preview canvas."""
         c = self.waveform_canvas
         c.delete('all')
-        w = c.winfo_width() or 380
+        w = c.winfo_width() or 320
         h = c.winfo_height() or 80
         mx, my = 4, 6
         draw_w = w - mx * 2
@@ -617,9 +687,9 @@ class PianoGUI:
         w = self.envelope_canvas.winfo_width()
         h = self.envelope_canvas.winfo_height()
         if w <= 1:
-            w = 360
+            w = 300
         if h <= 1:
-            h = 120
+            h = 100
         
         # Margins
         margin_x = 40
@@ -708,77 +778,58 @@ class PianoGUI:
                                         fill='#888888', font=('Arial', 8))
     
     def update_gain_meter(self, current_level: float, peak_level: float, is_clipping: bool = False):
-        """Update the vertical gain meter display.
-        
-        Args:
-            current_level: Current output level (0-1)
-            peak_level: Peak level since last reset (0-1)
-            is_clipping: Whether currently clipping
-        """
-        # Smooth the level updates to prevent flashing
-        self.smoothed_level = self.meter_smooth_alpha * current_level + (1 - self.meter_smooth_alpha) * self.smoothed_level
-        
+        self.smoothed_level = (self.meter_smooth_alpha * current_level
+                               + (1 - self.meter_smooth_alpha) * self.smoothed_level)
         self.current_level = self.smoothed_level
         self.peak_level = peak_level
-        
-        # Update canvas
-        self.gain_canvas.delete('all')
-        
-        w = self.gain_canvas.winfo_width()
-        h = self.gain_canvas.winfo_height()
-        if w <= 1:
-            w = 50
-        if h <= 1:
-            h = 220
-        
-        margin = 5
-        meter_h = h - margin * 2
-        
-        # Background
-        self.gain_canvas.create_rectangle(margin, margin, w - margin, h - margin,
-                                         fill='#0a0a0a', outline='#555555')
-        
-        # Clipping zones (from bottom to top)
-        clip_threshold = 0.9
-        clip_y = margin + meter_h * (1.0 - clip_threshold)
-        
-        # Warn zone (0.7-0.9)
-        warn_y = margin + meter_h * (1.0 - 0.7)
-        self.gain_canvas.create_rectangle(margin, clip_y, w - margin, warn_y,
-                                         fill='#3a3a00', outline='')
-        
-        # Clip zone (0.9+)
-        self.gain_canvas.create_rectangle(margin, margin, w - margin, clip_y,
-                                         fill='#3a0000', outline='')
-        
-        # Current level bar (grows upward from bottom)
-        current_height = meter_h * min(self.current_level, 1.0)
-        current_y = h - margin - current_height
-        
+
+        # Convert to dB, floor at -60 dB
+        DB_FLOOR = -60.0
+        db = 20.0 * np.log10(max(self.current_level, 1e-10))
+        db = max(db, DB_FLOOR)
+        normalized = (db - DB_FLOOR) / (-DB_FLOOR)  # 0.0 at -60 dB, 1.0 at 0 dB
+
+        m, w, h = self._m, self._mw, self._mh
+        mh = h - m * 2
+        bar_top = h - m - mh * normalized
+
         if is_clipping:
-            bar_color = '#FF3333'
-        elif self.current_level > 0.9:
-            bar_color = '#FFAA00'
-        elif self.current_level > 0.7:
-            bar_color = '#FFFF00'
+            color = '#FF3333'
+        elif db > -6:
+            color = '#FFAA00'
+        elif db > -12:
+            color = '#FFFF00'
         else:
-            bar_color = '#00FF00'
-        
-        self.gain_canvas.create_rectangle(margin, current_y, w - margin, h - margin,
-                                         fill=bar_color, outline='')
-        
-        # Target level markers
-        self.gain_canvas.create_line(margin, margin + meter_h * (1.0 - 0.7), w - margin, margin + meter_h * (1.0 - 0.7),
-                                    fill='#555555', width=1)  # 70% line
-        self.gain_canvas.create_line(margin, margin + meter_h * (1.0 - 0.95), w - margin, margin + meter_h * (1.0 - 0.95),
-                                    fill='#555555', width=1)  # 95% line
-        
-        # Update text label
-        percent = self.current_level * 100
-        clip_text = "\n(CLIP!)" if is_clipping else ""
-        self.level_label.config(text=f"{percent:.0f}%\n({self.current_level:.2f}){clip_text}",
-                               fg='#FF3333' if is_clipping else '#00AA00')
+            color = '#00FF00'
+
+        self.gain_canvas.coords(self._gc_bar, m, bar_top, w - m, h - m)
+        self.gain_canvas.itemconfig(self._gc_bar, fill=color)
+
+        clip_text = " CLIP" if is_clipping else ""
+        db_text = f"{db:.0f}dB" if self.current_level > 1e-10 else "-inf"
+        self.level_label.config(
+            text=f"{db_text}{clip_text}",
+            fg='#FF3333' if is_clipping else '#00AA00',
+        )
     
+    def _draw_c_labels(self):
+        self.canvas.delete('c_label')
+        transpose_octs = self.transpose // 12
+        x_pos = 10
+        for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
+            sounding_oct = (octave - 1) + transpose_octs
+            self.canvas.create_text(
+                x_pos + self.WHITE_KEY_WIDTH // 2, 22,
+                text=f"C{sounding_oct}", font=("Arial", 7), fill='#888888', tags='c_label',
+            )
+            x_pos += len(self.WHITE_KEYS) * self.WHITE_KEY_WIDTH
+        # Trailing C
+        sounding_oct = self.END_OCTAVE + transpose_octs
+        self.canvas.create_text(
+            x_pos + self.WHITE_KEY_WIDTH // 2, 22,
+            text=f"C{sounding_oct}", font=("Arial", 7), fill='#888888', tags='c_label',
+        )
+
     def _get_midi_note(self, white_key_index: int, octave: int) -> int:
         """Get MIDI note number from white key index and octave."""
         midi_offsets = [0, 2, 4, 5, 7, 9, 11]
@@ -793,7 +844,7 @@ class PianoGUI:
         
         # Draw white keys first
         for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
-            for white_key_idx, white_key_name in enumerate(self.WHITE_KEYS):
+            for white_key_idx in range(len(self.WHITE_KEYS)):
                 midi_note = self._get_midi_note(white_key_idx, octave)
                 
                 key_id = self.canvas.create_rectangle(
@@ -815,6 +866,8 @@ class PianoGUI:
         )
         self.key_map[key_id] = trailing_note
         self.note_key_map[trailing_note] = key_id
+
+        self._draw_c_labels()
 
         # Draw black keys on top
         x_pos = 10

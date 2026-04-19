@@ -65,7 +65,12 @@ def main():
             on_reverb_change=lambda room, damp, wet: synth.set_reverb(room, damp, wet),
             on_delay_change=lambda ms, fb, wet: synth.set_delay(ms, fb, wet),
             on_wavetable_change=lambda wt: synth.set_wavetable(wt),
+            on_panic=synth.panic,
         )
+
+        # Re-wire MIDI callbacks through the GUI so keys highlight on MIDI input
+        synth.midi_handler.on_note_on = piano.midi_note_on
+        synth.midi_handler.on_note_off = piano.midi_note_off
 
         def update_gui():
             while root.winfo_exists():

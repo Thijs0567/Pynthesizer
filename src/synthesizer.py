@@ -52,6 +52,9 @@ class Synthesizer:
         self.pitch_bend_amount = 0  # -8192 to 8191
         self.pitch_bend_range = 2  # semitones
 
+        # Smoothed envelope-weight sum for √N polyphony scaling
+        self._mix_scale = 1.0
+
         # Compressor state — persists between audio blocks
         self._comp_envelope = 1e-10  # RMS envelope follower
         self._comp_gain = 1.0        # Smoothed gain multiplier
@@ -74,7 +77,7 @@ class Synthesizer:
         self._lim_release_coef = np.exp(-1.0 / (0.050 * sample_rate))     # 50ms release
 
         # Effects chain
-        self._volume = MasterVolume(initial_volume=0.8)
+        self._volume = MasterVolume(initial_volume=0.3)  # = 70% knob × (3/7)
         self._lpf    = LowPassFilter(sample_rate)
         self._reverb = Reverb(sample_rate, wet=0.0)
         self._delay  = Delay(sample_rate, wet=0.0)
@@ -155,6 +158,10 @@ class Synthesizer:
         """Handle MIDI note off event."""
         if note in self.active_voices:
             self.active_voices[note].note_off()
+
+    def panic(self):
+        """Immediately silence all voices without blocking future note input."""
+        self.active_voices.clear()
     
     def _apply_compression(self, signal: np.ndarray) -> np.ndarray:
         """
@@ -258,24 +265,33 @@ class Synthesizer:
         # Result: More voices = gradually louder, but natural compression
         # like a real electric piano that never clips
         
+        env_sum = 0.0
         for note, voice in list(self.active_voices.items()):
             try:
                 if voice.is_active:
                     samples = voice.generate_samples(num_samples)
                     if samples is not None and len(samples) == num_samples:
-                        # Add voices directly without scaling
                         output += samples
+                    env_sum += voice._get_envelope_value()
                 else:
                     notes_to_remove.append(note)
             except Exception as e:
                 print(f"Error generating voice samples for note {note}: {type(e).__name__}: {e}")
                 notes_to_remove.append(note)
-        
+
         # Remove inactive voices
         for note in notes_to_remove:
             if note in self.active_voices:
                 del self.active_voices[note]
-        
+
+        # Envelope-weighted √-scaling: normalise by √(sum of envelope amplitudes)
+        # so the gain tracks actual loudness rather than raw voice count.
+        # Smoothed with a 50 ms time constant to avoid pumping artifacts.
+        target_scale = 1.0 / np.sqrt(max(env_sum, 1.0))
+        smooth = np.exp(-1.0 / (0.050 * self.sample_rate / max(num_samples, 1)))
+        self._mix_scale = smooth * self._mix_scale + (1.0 - smooth) * target_scale
+        output *= self._mix_scale
+
         # Ensure output is valid
         output = np.nan_to_num(output, nan=0.0, posinf=1.0, neginf=-1.0)
         

@@ -16,8 +16,9 @@ MIDI input is opened automatically if a device is connected. The GUI always laun
 - **Clickable Piano**: 3 octaves + 1 key (C4–C7), click or drag to play
 - **QWERTY Keyboard**: Play notes from your computer keyboard
 - **Polyphony**: Up to 16 simultaneous voices
-- **Visual Feedback**: Keys highlight when pressed (mouse and keyboard)
+- **Visual Feedback**: Keys highlight when pressed (mouse, keyboard, and MIDI); panic button clears all highlights
 - **Voice Counter**: Real-time display of active voices
+- **Level Meter**: Logarithmic dB scale (-60 dB to 0 dB), reads post-compressor
 - **Transpose Slider**: ±24 semitones
 
 ## QWERTY Keyboard Layout
@@ -47,6 +48,7 @@ Each note plays through the wavetable oscillator with:
 - **Pitch Bend Support**: ±2 semitones (or custom range)
 - **Voice Stealing**: Oldest-note priority when exceeding max voices
 - **Smooth Retrigger**: No clicks when re-playing the same note
+- **Polyphony Gain Scaling**: Output is normalised by √(sum of active envelope amplitudes), keeping perceived loudness constant whether 1 or 16 voices are playing. The scaling is smoothed (50 ms) so voices fading through release cause no pumping or level jumps.
 - **Compressor + Limiter**:
   - RMS compressor with soft knee
   - Peak limiter prevents clipping while preserving dynamics
@@ -54,7 +56,7 @@ Each note plays through the wavetable oscillator with:
   - **Low-Pass Filter**: Variable cutoff and Q (resonance)
   - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
-- **Master Volume**: 0.0–1.0 scaling
+- **Master Volume**: knob range mapped to 0–43% linear; defaults to 70% knob (0.3 linear) for comfortable headroom
 
 ## Architecture
 

@@ -210,7 +210,11 @@ class Knob(tk.Frame):
         c.create_line(x_in, y_in, x_out, y_out, fill="#FFFFFF", width=2)
 
         # Value label.
-        self._value_label.config(text=self._format.format(self._value))
+        if callable(self._format):
+            text = self._format(self._value)
+        else:
+            text = self._format.format(self._value)
+        self._value_label.config(text=text)
 
     def _on_press(self, event):
         self._drag_y0 = event.y
