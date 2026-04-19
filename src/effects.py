@@ -236,6 +236,57 @@ class Delay:
         self._write_ptr = 0
 
 
+class Bitcrusher:
+    """Bit-depth reduction + sample-rate reduction (downsampling hold)."""
+
+    def __init__(self, bits: float = 16.0, downsample: int = 1,
+                 wet: float = 0.0, max_block_size: int = 4096):
+        self._bits = float(bits)
+        self._downsample = max(1, int(downsample))
+        self._wet = max(0.0, min(1.0, float(wet)))
+        self._held = 0.0
+        self._hold_count = 0
+        self._buf = np.zeros(max_block_size, dtype=np.float64)
+
+    def set_bits(self, bits: float) -> None:
+        self._bits = max(1.0, min(24.0, float(bits)))
+
+    def set_downsample(self, factor: int) -> None:
+        self._downsample = max(1, int(factor))
+
+    def set_wet(self, wet: float) -> None:
+        self._wet = max(0.0, min(1.0, float(wet)))
+
+    def process(self, signal: np.ndarray) -> np.ndarray:
+        n = len(signal)
+        if n > len(self._buf):
+            self._buf = np.zeros(n, dtype=np.float64)
+        levels = 2.0 ** (self._bits - 1)
+        step = 1.0 / levels
+        wet = self._wet
+        dry = 1.0 - wet
+        ds = self._downsample
+        held = self._held
+        count = self._hold_count
+        out = self._buf
+
+        for i in range(n):
+            x = float(signal[i])
+            if count == 0:
+                # quantise
+                held = math.floor(x / step + 0.5) * step
+            count = (count + 1) % ds
+            out[i] = dry * x + wet * held
+
+        self._held = held
+        self._hold_count = count
+        return out[:n]
+
+    def reset_state(self) -> None:
+        self._held = 0.0
+        self._hold_count = 0
+
+
 class Chorus:
     """
     Stereo chorus: two LFO-modulated delay lines (L/R) with opposite LFO phase.

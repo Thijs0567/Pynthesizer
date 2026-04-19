@@ -37,6 +37,7 @@ class PianoGUI:
                  on_delay_change: Callable = None,
                  on_wavetable_change: Callable = None,
                  on_chorus_change: Callable = None,
+                 on_bitcrusher_change: Callable = None,
                  on_panic: Callable = None):
         """
         Initialize the piano GUI.
@@ -57,6 +58,7 @@ class PianoGUI:
         self.on_delay_change  = on_delay_change  or (lambda ms, fb, wet: None)
         self.on_wavetable_change = on_wavetable_change or (lambda wt: None)
         self.on_chorus_change = on_chorus_change or (lambda rate, depth, wet: None)
+        self.on_bitcrusher_change = on_bitcrusher_change or (lambda bits, ds, wet: None)
         self.on_panic = on_panic or (lambda: None)
 
         # Wavetable state (16 harmonic amplitudes)
@@ -358,7 +360,7 @@ class PianoGUI:
         section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
         section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
 
-        tk.Label(section, text="Low-Pass Filter", font=("Arial", 11, "bold"),
+        tk.Label(section, text="LPF", font=("Arial", 11, "bold"),
                  fg='white', bg='#444444').pack(pady=(6, 2))
 
         knob_row = tk.Frame(section, bg='#444444')
@@ -380,7 +382,7 @@ class PianoGUI:
                                 initial=0.7,
                                 command=self._on_lpf_changed)
         self.lpf_q_scale.set(0.7)
-        self.lpf_q_scale.grid(row=0, column=1, padx=6, pady=4)
+        self.lpf_q_scale.grid(row=1, column=0, padx=6, pady=4)
 
     def _create_effects_controls(self, parent):
         """Effects section: Reverb, Delay, and Chorus sub-groups."""
@@ -472,6 +474,33 @@ class PianoGUI:
                                      command=self._on_chorus_changed)
         self.chorus_wet_scale.set(0)
         self.chorus_wet_scale.grid(row=0, column=2, padx=5, pady=6)
+
+        # ── Bitcrusher ────────────────────────────────────────────────────
+        bc = tk.LabelFrame(groups_row, text="Bitcrusher", bg='#444444',
+                           fg='#AAFFAA', font=("Arial", 9, "bold"),
+                           bd=1, relief=tk.GROOVE)
+        bc.pack(side=tk.LEFT, padx=4, pady=4)
+
+        self.bc_bits_scale = Knob(bc, from_=1, to=16, resolution=1,
+                                  label="Bits", value_format="{:.0f} bit",
+                                  initial=16,
+                                  command=self._on_bitcrusher_changed)
+        self.bc_bits_scale.set(16)
+        self.bc_bits_scale.grid(row=0, column=0, padx=5, pady=6)
+
+        self.bc_ds_scale = Knob(bc, from_=1, to=32, resolution=1,
+                                label="Downsamp", value_format="÷{:.0f}",
+                                initial=1,
+                                command=self._on_bitcrusher_changed)
+        self.bc_ds_scale.set(1)
+        self.bc_ds_scale.grid(row=0, column=1, padx=5, pady=6)
+
+        self.bc_wet_scale = Knob(bc, from_=0, to=100, resolution=1,
+                                 label="Wet", value_format="{:.0f}%",
+                                 initial=0,
+                                 command=self._on_bitcrusher_changed)
+        self.bc_wet_scale.set(0)
+        self.bc_wet_scale.grid(row=0, column=2, padx=5, pady=6)
 
     def _create_master_section(self, parent):
         """Master section: Volume knob + compact vertical level meter."""
@@ -577,6 +606,13 @@ class PianoGUI:
             rate_hz,
             self.chorus_depth_scale.get() / 100.0,
             self.chorus_wet_scale.get()   / 100.0,
+        )
+
+    def _on_bitcrusher_changed(self, _):
+        self.on_bitcrusher_change(
+            float(self.bc_bits_scale.get()),
+            int(self.bc_ds_scale.get()),
+            self.bc_wet_scale.get() / 100.0,
         )
 
     # Harmonic amplitudes for each preset (16 bins, index 0 = fundamental)

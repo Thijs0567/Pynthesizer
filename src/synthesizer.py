@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Optional
 from src.voice import Voice
 from src.midi_handler import MIDIHandler
-from src.effects import MasterVolume, LowPassFilter, Reverb, Delay, Chorus
+from src.effects import MasterVolume, LowPassFilter, Reverb, Delay, Chorus, Bitcrusher
 
 
 class Synthesizer:
@@ -82,6 +82,7 @@ class Synthesizer:
         self._reverb = Reverb(sample_rate, wet=0.0)
         self._delay  = Delay(sample_rate, wet=0.0)
         self._chorus = Chorus(sample_rate, wet=0.0)
+        self._bitcrusher = Bitcrusher(bits=16.0, downsample=1, wet=0.0)
 
     @staticmethod
     def note_to_frequency(note: int) -> float:
@@ -124,6 +125,11 @@ class Synthesizer:
         self._chorus.set_rate(rate_hz)
         self._chorus.set_depth(depth)
         self._chorus.set_wet(wet)
+
+    def set_bitcrusher(self, bits: float, downsample: int, wet: float) -> None:
+        self._bitcrusher.set_bits(bits)
+        self._bitcrusher.set_downsample(downsample)
+        self._bitcrusher.set_wet(wet)
 
     def set_wavetable(self, amplitudes) -> None:
         """Update harmonic amplitudes for all active and future voices."""
@@ -306,6 +312,7 @@ class Synthesizer:
         output = self._reverb.process(output)
         output = self._delay.process(output)
         output = self._apply_compression(output)
+        output = self._bitcrusher.process(output)
 
         # Chorus is last — returns (N, 2) stereo
         stereo = self._chorus.process(output)

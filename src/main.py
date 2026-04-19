@@ -66,6 +66,7 @@ def main():
             on_delay_change=lambda ms, fb, wet: synth.set_delay(ms, fb, wet),
             on_wavetable_change=lambda wt: synth.set_wavetable(wt),
             on_chorus_change=lambda rate, depth, wet: synth.set_chorus(rate, depth, wet),
+            on_bitcrusher_change=lambda bits, ds, wet: synth.set_bitcrusher(bits, ds, wet),
             on_panic=synth.panic,
         )
 
