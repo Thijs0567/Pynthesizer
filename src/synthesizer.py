@@ -36,6 +36,11 @@ class Synthesizer:
         self.decay = 0.1
         self.sustain = 0.7
         self.release = 0.3
+
+        # Wavetable (16 harmonic amplitudes; bin 0 = fundamental)
+        _wt = np.zeros(16, dtype=np.float32)
+        _wt[0] = 1.0
+        self._wavetable = _wt
         
         # MIDI handler
         self.midi_handler = MIDIHandler()
@@ -111,6 +116,13 @@ class Synthesizer:
         self._delay.set_feedback(feedback)
         self._delay.set_wet(wet)
 
+    def set_wavetable(self, amplitudes) -> None:
+        """Update harmonic amplitudes for all active and future voices."""
+        wt = np.clip(np.array(amplitudes, dtype=np.float32)[:16], 0.0, 1.0)
+        self._wavetable = wt
+        for voice in list(self.active_voices.values()):
+            voice.wavetable = wt
+
     def _on_note_on(self, note: int, velocity: int):
         """Handle MIDI note on event."""
         if note in self.active_voices:
@@ -134,7 +146,8 @@ class Synthesizer:
             frequency = self.note_to_frequency(note)
             voice = Voice(self.sample_rate, frequency, velocity,
                         self.attack, self.decay, self.sustain, self.release,
-                        creation_time=self.voice_creation_counter)
+                        creation_time=self.voice_creation_counter,
+                        wavetable=self._wavetable)
             self.voice_creation_counter += 1
             self.active_voices[note] = voice
     

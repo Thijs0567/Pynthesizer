@@ -1,13 +1,18 @@
 """Voice/Oscillator — one polyphonic note."""
 import numpy as np
 
+_DEFAULT_WAVETABLE = np.zeros(16, dtype=np.float32)
+_DEFAULT_WAVETABLE[0] = 1.0
+_DEFAULT_WAVETABLE.flags.writeable = False
+
 
 class Voice:
     """Single oscillator voice: sine wave + ADSR envelope."""
 
     def __init__(self, sample_rate: int, frequency: float, velocity: int = 127,
                  attack: float = 0.01, decay: float = 0.1, sustain: float = 0.7,
-                 release: float = 0.3, creation_time: float = 0.0):
+                 release: float = 0.3, creation_time: float = 0.0,
+                 wavetable=None):
         self.sample_rate = sample_rate
         self.frequency = frequency
         self.velocity = velocity
@@ -24,11 +29,16 @@ class Voice:
         self.is_releasing = False
         self.key_off_time = 0.0
         self._retrigger_level = 0.0
+        self._release_start_level = 0.0
+
+        self.wavetable = wavetable if wavetable is not None else _DEFAULT_WAVETABLE.copy()
+        self._osc_buf = np.zeros(4096, dtype=np.float64)
 
     def set_frequency(self, frequency: float):
         self.frequency = max(20.0, min(20000.0, frequency))
 
     def note_off(self):
+        self._release_start_level = self._get_envelope_value()
         self.is_releasing = True
         self.key_off_time = self.time
 
@@ -45,7 +55,7 @@ class Voice:
             t = self.time - self.key_off_time
             if t >= self.release_time:
                 return 0.0
-            return self.sustain_level * (1.0 - t / self.release_time)
+            return self._release_start_level * (1.0 - t / self.release_time)
         if self.time < self.attack_time:
             return self.time / self.attack_time
         if self.time < self.attack_time + self.decay_time:
@@ -71,7 +81,16 @@ class Voice:
         phases = self.phase + indices * phase_inc
         self.phase = (phases[-1] + phase_inc) % (2.0 * np.pi)
         amplitude = max(0.0, min(1.0, self.velocity / 127.0))
-        samples = (np.sin(phases) * amplitude).astype(np.float32)
+
+        wt = self.wavetable
+        if num_samples > len(self._osc_buf):
+            self._osc_buf = np.zeros(num_samples, dtype=np.float64)
+        osc = self._osc_buf
+        osc[:num_samples] = 0.0
+        for k in range(16):
+            if wt[k] != 0.0:
+                osc[:num_samples] += wt[k] * np.sin((k + 1) * phases)
+        samples = (osc[:num_samples] * amplitude).astype(np.float32)
 
         # ── ADSR envelope (vectorised) ────────────────────────────────────────
         # Use float32 for envelope time — float32 precision is sufficient for
@@ -82,7 +101,7 @@ class Voice:
             rel_t = t - np.float32(self.key_off_time)
             env = np.where(
                 rel_t < self.release_time,
-                np.float32(self.sustain_level) * (1.0 - rel_t / np.float32(self.release_time)),
+                np.float32(self._release_start_level) * (1.0 - rel_t / np.float32(self.release_time)),
                 np.float32(0.0),
             )
             end_idx = int(np.searchsorted(rel_t, self.release_time))

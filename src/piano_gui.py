@@ -5,8 +5,9 @@ import tkinter as tk
 from tkinter import Canvas, Scale, HORIZONTAL
 from typing import Callable, Optional, Dict, Tuple
 import math
+import numpy as np
 
-from .widgets import Knob
+from .widgets import Knob, HarmonicSlider
 
 
 class PianoGUI:
@@ -33,7 +34,8 @@ class PianoGUI:
                  on_volume_change: Callable = None,
                  on_lpf_change: Callable = None,
                  on_reverb_change: Callable = None,
-                 on_delay_change: Callable = None):
+                 on_delay_change: Callable = None,
+                 on_wavetable_change: Callable = None):
         """
         Initialize the piano GUI.
         
@@ -51,6 +53,11 @@ class PianoGUI:
         self.on_lpf_change    = on_lpf_change    or (lambda cutoff, q: None)
         self.on_reverb_change = on_reverb_change or (lambda room, damp, wet: None)
         self.on_delay_change  = on_delay_change  or (lambda ms, fb, wet: None)
+        self.on_wavetable_change = on_wavetable_change or (lambda wt: None)
+
+        # Wavetable state (16 harmonic amplitudes)
+        self.wavetable = np.zeros(16, dtype=np.float32)
+        self.wavetable[0] = 1.0
 
         # Active keys (pressed)
         self.active_keys: Dict[int, int] = {}  # note -> key_id
@@ -90,6 +97,7 @@ class PianoGUI:
 
         self._create_adsr_controls(top_row)
         self._create_filter_controls(top_row)
+        self._create_oscillator_controls(top_row)
         self._create_effects_controls(top_row)
 
         # Bottom row: piano on left, master section on right
@@ -353,7 +361,145 @@ class PianoGUI:
             self.delay_fb_scale.get()  / 100.0,
             self.delay_wet_scale.get() / 100.0,
         )
-    
+
+    # Harmonic amplitudes for each preset (16 bins, index 0 = fundamental)
+    _WAVEFORM_PRESETS = {
+        'sine':     lambda k: 1.0 if k == 0 else 0.0,
+        'saw':      lambda k: 1.0 / (k + 1),
+        'square':   lambda k: (1.0 / (k + 1)) if (k % 2 == 0) else 0.0,
+        'triangle': lambda k: ((-1) ** (k // 2) / (k + 1) ** 2) if (k % 2 == 0) else 0.0,
+        'semisine': lambda k: (1.0 / (k + 1)) if (k % 2 == 1) else (1.0 if k == 0 else 0.0),
+    }
+
+    def _make_preset_waveform(self, name: str) -> np.ndarray:
+        fn = self._WAVEFORM_PRESETS[name]
+        wt = np.array([fn(k) for k in range(16)], dtype=np.float32)
+        peak = np.max(np.abs(wt))
+        if peak > 0:
+            wt /= peak
+        return wt
+
+    def _draw_preset_button_waveform(self, canvas: tk.Canvas, wt: np.ndarray):
+        canvas.delete('all')
+        w = canvas.winfo_width() or 54
+        h = canvas.winfo_height() or 36
+        N = 120
+        phases = np.linspace(0, 2 * np.pi, N, endpoint=False)
+        wave = np.zeros(N, dtype=np.float64)
+        for k in range(16):
+            if wt[k] != 0.0:
+                wave += wt[k] * np.sin((k + 1) * phases)
+        peak = max(float(np.max(np.abs(wave))), 1e-6)
+        wave /= peak
+        mx, my = 3, 4
+        draw_w, draw_h = w - mx * 2, h - my * 2
+        mid_y = my + draw_h // 2
+        xs = mx + np.arange(N) * draw_w / (N - 1)
+        ys = mid_y - wave * (draw_h / 2 - 2)
+        coords = []
+        for x, y in zip(xs, ys):
+            coords.extend([float(x), float(y)])
+        if len(coords) >= 4:
+            canvas.create_line(coords, fill='#00FF00', width=1, smooth=False)
+
+    def _apply_preset(self, name: str):
+        wt = self._make_preset_waveform(name)
+        self.wavetable = wt.copy()
+        for k, slider in enumerate(self.harmonic_sliders):
+            slider.set(float(wt[k]))
+        self._draw_waveform()
+        self.on_wavetable_change(self.wavetable.copy())
+
+    def _create_oscillator_controls(self, parent):
+        """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
+        section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
+        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
+
+        tk.Label(section, text="Oscillator", font=("Arial", 11, "bold"),
+                 fg='white', bg='#444444').pack(pady=(6, 2))
+
+        # Preset buttons row
+        preset_row = tk.Frame(section, bg='#444444')
+        preset_row.pack(padx=8, pady=(0, 4))
+
+        self._preset_btn_canvases = {}
+        for name in ('sine', 'saw', 'square', 'triangle', 'semisine'):
+            btn_frame = tk.Frame(preset_row, bg='#555555', relief=tk.RAISED, bd=2,
+                                 cursor='hand2')
+            btn_frame.pack(side=tk.LEFT, padx=3)
+            c = tk.Canvas(btn_frame, bg='#1a1a1a', highlightthickness=0,
+                          width=54, height=36)
+            c.pack()
+            wt = self._make_preset_waveform(name)
+            # Draw after packing so winfo_width is correct on next update
+            c.bind('<Configure>', lambda _, cv=c, w=wt:
+                   self._draw_preset_button_waveform(cv, w))
+            c.bind('<Button-1>', lambda _, n=name: self._apply_preset(n))
+            btn_frame.bind('<Button-1>', lambda _, n=name: self._apply_preset(n))
+            self._preset_btn_canvases[name] = c
+
+        self.waveform_canvas = tk.Canvas(
+            section, bg='#1a1a1a', highlightthickness=1,
+            highlightbackground='#555555', width=380, height=80,
+        )
+        self.waveform_canvas.pack(padx=8, pady=(2, 4))
+
+        slider_row = tk.Frame(section, bg='#444444')
+        slider_row.pack(padx=8, pady=(0, 8))
+
+        self.harmonic_sliders = []
+        for k in range(16):
+            label = "F" if k == 0 else str(k + 1)
+            initial = 1.0 if k == 0 else 0.0
+            slider = HarmonicSlider(
+                slider_row,
+                label=label,
+                initial=initial,
+                command=lambda val, idx=k: self._on_harmonic_changed(idx, val),
+                bg='#444444',
+            )
+            slider.grid(row=0, column=k, padx=1)
+            self.harmonic_sliders.append(slider)
+
+        self._draw_waveform()
+
+    def _on_harmonic_changed(self, index: int, value: float):
+        self.wavetable[index] = float(value)
+        self._draw_waveform()
+        self.on_wavetable_change(self.wavetable.copy())
+
+    def _draw_waveform(self):
+        """Draw one cycle of the current wavetable waveform on the preview canvas."""
+        c = self.waveform_canvas
+        c.delete('all')
+        w = c.winfo_width() or 380
+        h = c.winfo_height() or 80
+        mx, my = 4, 6
+        draw_w = w - mx * 2
+        draw_h = h - my * 2
+        mid_y = my + draw_h // 2
+
+        c.create_line(mx, mid_y, w - mx, mid_y, fill='#333333', width=1)
+
+        N = 200
+        phases = np.linspace(0, 2 * np.pi, N, endpoint=False)
+        wt = self.wavetable
+        wave = np.zeros(N, dtype=np.float64)
+        for k in range(16):
+            if wt[k] != 0.0:
+                wave += wt[k] * np.sin((k + 1) * phases)
+
+        peak = max(float(np.max(np.abs(wave))), 1.0)
+        wave /= peak
+
+        xs = mx + np.arange(N) * draw_w / (N - 1)
+        ys = mid_y - wave * (draw_h / 2 - 2)
+        coords = []
+        for x, y in zip(xs, ys):
+            coords.extend([float(x), float(y)])
+        if len(coords) >= 4:
+            c.create_line(coords, fill='#00FF00', width=1, smooth=False)
+
     def _draw_envelope(self):
         """Draw ADSR envelope visualization."""
         self.envelope_canvas.delete('all')

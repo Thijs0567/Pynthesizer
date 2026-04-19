@@ -68,6 +68,7 @@ def main():
             on_lpf_change=lambda cutoff, q: synth.set_lpf(cutoff, q),
             on_reverb_change=lambda room, damp, wet: synth.set_reverb(room, damp, wet),
             on_delay_change=lambda ms, fb, wet: synth.set_delay(ms, fb, wet),
+            on_wavetable_change=lambda wt: synth.set_wavetable(wt),
         )
         
         # Update voice count and levels in GUI periodically

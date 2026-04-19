@@ -30,7 +30,7 @@ Click keys to play. That's it.
 
 ## What It Does
 
-Each note plays as a pure sine wave with:
+Each note plays through a wavetable oscillator with:
 - **ADSR Envelope**: Fully customizable Attack, Decay, Sustain, Release times
 - **Velocity-based Volume**: Dynamic response from MIDI/click (0–127)
 - **Pitch Bend Support**: ±2 semitones (or custom range)
@@ -39,6 +39,8 @@ Each note plays as a pure sine wave with:
 - **Compressor + Limiter**: 
   - RMS compressor with soft knee for e-piano character
   - Peak limiter prevents clipping while preserving dynamics
+- **Wavetable Oscillator**: 16-harmonic additive synthesis with individual per-harmonic amplitude sliders and a live waveform preview
+  - **Waveform Presets**: One-click buttons for sine, saw, square, triangle, and semisine — each displayed as a visual waveform icon
 - **Effects Chain**:
   - **Low Pass Filter**: Variable cutoff and Q (resonance)
   - **Delay**: Configurable time, feedback, and wet/dry mix
@@ -62,7 +64,7 @@ MIDI/GUI Input → Synthesizer (voice management)
 ## Modules
 
 - `gui_main.py` - GUI entry point
-- `piano_gui.py` - Tkinter piano interface
+- `piano_gui.py` - Tkinter piano interface with oscillator, ADSR, filter, and effects controls
 - `synthesizer.py` - Core synthesis engine & dynamics processor
 - `voice.py` - Individual sine wave oscillator + ADSR
 - `effects.py` - Effect chain (Master Volume, Low Pass Filter, Reverb, Delay)
@@ -105,7 +107,6 @@ synth._on_pitch_bend(value)                     # -8192 to +8191
 
 ## Known Limitations
 
-- **Sine waves only** — no sawtooth, square, or other waveforms
 - **Mono output** — no stereo, surround, or spatial effects
 - **Fixed tuning** — A4 = 440 Hz (no alternate tuning systems)
 
