@@ -1,57 +1,67 @@
-# PythonSynth - Polyphonic MIDI Synthesizer
+# PythonSynth - Polyphonic Synthesizer
 
-A simple polyphonic sine wave synthesizer with a clickable GUI piano interface.
+A polyphonic wavetable synthesizer with a clickable GUI piano, QWERTY keyboard playability, ADSR, effects, and optional MIDI input.
 
 ## Quick Start
 
 ```bash
 pip install -r requirements.txt
-python -m src.gui_main
+python -m src.main
 ```
 
-Click keys to play. That's it.
+MIDI input is opened automatically if a device is connected. The GUI always launches.
 
 ## GUI Features
 
-- **Clickable Piano**: Click any key to play notes (3 octaves: C4–C7)
-- **Polyphony**: Play up to 16 simultaneous notes
-- **Drag to Play**: Click and drag across keys for runs and chords
-- **Visual Feedback**: Keys highlight when pressed
+- **Clickable Piano**: 3 octaves + 1 key (C4–C7), click or drag to play
+- **QWERTY Keyboard**: Play notes from your computer keyboard
+- **Polyphony**: Up to 16 simultaneous voices
+- **Visual Feedback**: Keys highlight when pressed (mouse and keyboard)
 - **Voice Counter**: Real-time display of active voices
+- **Transpose Slider**: ±24 semitones
 
-## Alternative Modes
+## QWERTY Keyboard Layout
 
-| Mode | Command |
-|------|---------|
-| **GUI Piano** | `python -m src.gui_main` |
-| **MIDI Controller** | `python -m src.main` |
-| **Test Synthesis** | `python test_synthesis.py` |
-| **GUI Demo** (no audio) | `python demo_gui.py` |
+| Row | Keys | Notes |
+|-----|------|-------|
+| White keys | `A S D F G H J K L` | C D E F G A B C D |
+| Black keys | `W E - T Y U - O` | C# D# — F# G# A# — C# |
+| Octave down | `Z` | Shift hotkeys one octave down |
+| Octave up | `X` | Shift hotkeys one octave up |
+
+- Default position: C5 (centered on the displayed range)
+- **Octave + Transpose chaining**: when `Z`/`X` hits the display limit, it automatically transposes by ±12 semitones (up to the ±24 transpose limit), allowing play across a wide range with visual feedback
+
+## Oscillator
+
+- **16-harmonic additive wavetable** with individual amplitude sliders and a live waveform preview
+- **Waveform presets** — click a button to load a classic shape:
+  - Sine, Saw, Square, Triangle, Semisine
+  - Each button shows the actual waveform shape as its icon
 
 ## What It Does
 
-Each note plays through a wavetable oscillator with:
-- **ADSR Envelope**: Fully customizable Attack, Decay, Sustain, Release times
+Each note plays through the wavetable oscillator with:
+- **ADSR Envelope**: Fully customizable Attack, Decay, Sustain, Release
 - **Velocity-based Volume**: Dynamic response from MIDI/click (0–127)
 - **Pitch Bend Support**: ±2 semitones (or custom range)
 - **Voice Stealing**: Oldest-note priority when exceeding max voices
 - **Smooth Retrigger**: No clicks when re-playing the same note
-- **Compressor + Limiter**: 
-  - RMS compressor with soft knee for e-piano character
+- **Compressor + Limiter**:
+  - RMS compressor with soft knee
   - Peak limiter prevents clipping while preserving dynamics
-- **Wavetable Oscillator**: 16-harmonic additive synthesis with individual per-harmonic amplitude sliders and a live waveform preview
-  - **Waveform Presets**: One-click buttons for sine, saw, square, triangle, and semisine — each displayed as a visual waveform icon
 - **Effects Chain**:
-  - **Low Pass Filter**: Variable cutoff and Q (resonance)
+  - **Low-Pass Filter**: Variable cutoff and Q (resonance)
   - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
-- **Master Volume**: 0.0–1.0 scaling with no clipping
+- **Master Volume**: 0.0–1.0 scaling
 
 ## Architecture
 
 ```
-MIDI/GUI Input → Synthesizer (voice management)
-    → Voice Pool (sine generation + ADSR envelope per note)
+MIDI / GUI click / QWERTY keyboard
+    → Synthesizer (voice management)
+    → Voice Pool (wavetable oscillator + ADSR per note)
     → Voice Mixer (sum active voices)
     → Compressor (RMS stage + peak limiter)
     → Effects Chain (LPF → Delay → Reverb)
@@ -59,56 +69,50 @@ MIDI/GUI Input → Synthesizer (voice management)
     → Audio Engine → Speakers
 ```
 
-**Real-time Design**: Audio synthesis runs in callback (zero allocations). MIDI polling runs in separate thread to prevent glitches. Dynamics processor uses per-sample limiting (no staircase artifacts) and smooth block-wise gain ramps.
+**Real-time Design**: Audio synthesis runs in callback (zero allocations). MIDI polling runs in a separate thread. GUI updates at 20 Hz in a daemon thread.
 
 ## Modules
 
-- `gui_main.py` - GUI entry point
-- `piano_gui.py` - Tkinter piano interface with oscillator, ADSR, filter, and effects controls
+- `main.py` - Entry point: GUI piano with optional MIDI input
+- `piano_gui.py` - Tkinter piano interface with all controls
 - `synthesizer.py` - Core synthesis engine & dynamics processor
-- `voice.py` - Individual sine wave oscillator + ADSR
-- `effects.py` - Effect chain (Master Volume, Low Pass Filter, Reverb, Delay)
+- `voice.py` - Individual wavetable oscillator + ADSR
+- `effects.py` - Effect chain (LPF, Reverb, Delay)
 - `midi_handler.py` - MIDI input handling
 - `audio_engine.py` - Real-time audio output
+- `widgets/` - Knob and HarmonicSlider custom widgets
 
 ## Configuration & API
-
-**Synthesizer Parameters** (after instantiation):
 
 ```python
 synth = Synthesizer(sample_rate=44100, max_voices=16)
 
-# ADSR Envelope
 synth.set_adsr(attack=0.01, decay=0.1, sustain=0.7, release=0.3)
-
-# Effects
-synth.set_volume(0.8)                           # 0.0–1.0
-synth.set_lpf(cutoff_hz=10000, q=0.707)        # Low Pass Filter
+synth.set_volume(0.8)
+synth.set_lpf(cutoff_hz=10000, q=0.707)
 synth.set_reverb(room_size=0.5, damping=0.5, wet=0.3)
 synth.set_delay(delay_ms=250, feedback=0.4, wet=0.2)
-
-# MIDI/Control
-synth._on_note_on(note=60, velocity=100)
-synth._on_note_off(note=60)
-synth._on_pitch_bend(value)                     # -8192 to +8191
+synth.set_wavetable(np.array([1.0, 0.5, 0.0, ...], dtype=np.float32))  # 16 harmonics
 ```
 
 **Compressor Settings** (tweak in `src/synthesizer.py`):
-- `_comp_threshold_db` - Compression knee threshold (default: -3 dB)
-- `_comp_ratio` - Compression ratio (default: 4:1)
-- `_comp_knee_db` - Knee width (default: 6 dB)
-- `_lim_threshold` - Peak limiter ceiling (default: 0.90)
+- `_comp_threshold_db` — default: -3 dB
+- `_comp_ratio` — default: 4:1
+- `_comp_knee_db` — default: 6 dB
+- `_lim_threshold` — default: 0.90
 
 ## Requirements
 
 - Python 3.7+
 - Audio output device
 - Dependencies: `numpy`, `sounddevice`, `mido`, `tkinter` (included with Python)
+- MIDI device: optional
 
 ## Known Limitations
 
-- **Mono output** — no stereo, surround, or spatial effects
-- **Fixed tuning** — A4 = 440 Hz (no alternate tuning systems)
+- **Mono output** — no stereo or spatial effects
+- **Fixed tuning** — A4 = 440 Hz
+- **Key rollover**: simultaneous QWERTY notes are limited by keyboard hardware (N-key rollover keyboard recommended for full chords)
 
 ## License
 

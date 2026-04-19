@@ -1,73 +1,97 @@
 """
-Main entry point for the polyphonic MIDI sine wave synthesizer.
+Main entry point for the synthesizer — GUI piano with optional MIDI input.
 """
 import sys
+import tkinter as tk
+from threading import Thread
 import time
+import numpy as np
+
 from src.synthesizer import Synthesizer
 from src.audio_engine import AudioEngine
+from src.piano_gui import PianoGUI
 
 
 def main():
-    """Main synthesizer application."""
-    
-    print("Python Polyphonic MIDI Sine Wave Synthesizer")
-    print("=" * 50)
-    
-    # Configuration
     SAMPLE_RATE = 44100
     BLOCKSIZE = 2048
     MAX_VOICES = 16
-    
-    # Create synthesizer
+
     synth = Synthesizer(sample_rate=SAMPLE_RATE, max_voices=MAX_VOICES)
-    
-    # Create audio engine
     audio_engine = AudioEngine(sample_rate=SAMPLE_RATE, blocksize=BLOCKSIZE)
-    audio_engine.set_audio_callback(lambda frames: synth.generate_audio(frames))
-    
+
+    level_info = {'current': 0.0, 'peak': 0.0, 'clipping': False}
+
+    def audio_callback(frames):
+        audio = synth.generate_audio(frames)
+        current = np.max(np.abs(audio))
+        level_info['current'] = current
+        level_info['peak'] = max(level_info['peak'], current)
+        level_info['clipping'] = current > 0.90
+        return audio
+
+    audio_engine.set_audio_callback(audio_callback)
+
     try:
-        # List MIDI ports
-        print("\nAvailable MIDI input ports:")
+        print("PythonSynth")
+        print("=" * 50)
+
+        # MIDI — optional, non-fatal
         ports = synth.list_midi_ports()
-        for i, port in enumerate(ports):
-            print(f"  {i}: {port}")
-        
-        # Open default MIDI port
-        print("\nOpening MIDI port 0...")
-        if not synth.open_midi_port(0):
-            print("Warning: Could not open MIDI port. Continuing with virtual port...")
-        
-        # Start MIDI input
-        print("Starting MIDI input...")
-        synth.start_midi()
-        
-        # List audio devices
-        print("\n")
-        AudioEngine.list_devices()
-        
-        # Start audio engine
-        print("\nStarting audio engine...")
+        if ports:
+            print(f"MIDI ports found: {ports}")
+            if synth.open_midi_port(0):
+                synth.start_midi()
+                print(f"MIDI input active on: {ports[0]}")
+            else:
+                print("Warning: could not open MIDI port, continuing without MIDI.")
+        else:
+            print("No MIDI ports found, continuing without MIDI.")
+
+        print("Starting audio engine...")
         if not audio_engine.start():
             print("Error: Could not start audio engine")
             return 1
-        
-        print("\n" + "=" * 50)
-        print("Synthesizer running. Play MIDI notes to hear sine waves.")
-        print("Press Ctrl+C to exit.")
-        print("=" * 50 + "\n")
-        
-        # Main loop
-        try:
-            while True:
-                active_voices = len(synth.active_voices)
-                print(f"\rActive voices: {active_voices}/{MAX_VOICES}", end="", flush=True)
-                time.sleep(0.1)
-        
-        except KeyboardInterrupt:
-            print("\n\nShutting down...")
-    
+
+        root = tk.Tk()
+
+        piano = PianoGUI(
+            root,
+            on_note_on=lambda note, vel: synth._on_note_on(note, vel),
+            on_note_off=lambda note: synth._on_note_off(note),
+            on_adsr_change=lambda a, d, s, r: synth.set_adsr(a, d, s, r),
+            on_volume_change=lambda v: synth.set_volume(v),
+            on_lpf_change=lambda cutoff, q: synth.set_lpf(cutoff, q),
+            on_reverb_change=lambda room, damp, wet: synth.set_reverb(room, damp, wet),
+            on_delay_change=lambda ms, fb, wet: synth.set_delay(ms, fb, wet),
+            on_wavetable_change=lambda wt: synth.set_wavetable(wt),
+        )
+
+        def update_gui():
+            while root.winfo_exists():
+                try:
+                    piano.update_voice_count(len(synth.active_voices))
+                    piano.update_gain_meter(level_info['current'], level_info['peak'], level_info['clipping'])
+                    root.update()
+                except:
+                    break
+                time.sleep(0.05)
+
+        Thread(target=update_gui, daemon=True).start()
+
+        print("GUI ready. Click or use QWERTY keys to play.")
+        print("=" * 50)
+
+        root.mainloop()
+
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
     finally:
-        # Cleanup
+        print("\nShutting down...")
         audio_engine.stop()
         synth.stop()
         print("Synthesizer stopped.")

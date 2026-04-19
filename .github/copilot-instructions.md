@@ -1,8 +1,8 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-# PythonSynth - Python Polyphonic MIDI Sine Wave Synthesizer
+# PythonSynth - Python Polyphonic Synthesizer
 
-This workspace contains a standalone polyphonic synthesizer that takes MIDI input and outputs pure sine waves.
+This workspace contains a standalone polyphonic synthesizer with a GUI piano, wavetable oscillator, ADSR, effects, MIDI input, and QWERTY keyboard playability.
 
 ## Project Structure
 
@@ -10,47 +10,62 @@ This workspace contains a standalone polyphonic synthesizer that takes MIDI inpu
 PythonSynth/
 ├── src/
 │   ├── __init__.py          # Package initialization
-│   ├── gui_main.py          # GUI piano entry point
-│   ├── main.py              # MIDI input entry point
-│   ├── piano_gui.py         # Clickable piano GUI
-│   ├── synthesizer.py       # Core synthesis engine
-│   ├── voice.py             # Individual voice/oscillator
+│   ├── main.py              # Entry point: GUI piano + optional MIDI input
+│   ├── piano_gui.py         # Clickable piano GUI with all controls
+│   ├── synthesizer.py       # Core synthesis engine & dynamics processor
+│   ├── voice.py             # Individual voice/oscillator + ADSR
 │   ├── midi_handler.py      # MIDI input handling
-│   └── audio_engine.py      # Real-time audio output
-├── demo_gui.py             # GUI demo without audio
+│   ├── audio_engine.py      # Real-time audio output
+│   ├── effects.py           # Effect chain (LPF, Reverb, Delay)
+│   └── widgets/
+│       ├── __init__.py      # Knob widget
+│       └── harmonic_slider.py  # Per-harmonic amplitude slider
 ├── test_synthesis.py       # Synthesis test script
 ├── requirements.txt        # Python dependencies
-├── README.md              # User documentation
+├── README.md               # User documentation
 └── .github/
     └── copilot-instructions.md  # This file
 ```
 
-## Quick Start Options
+## Quick Start
 
-1. **GUI Piano** (Easiest): `python -m src.gui_main` - Click keys to play
-2. **MIDI Mode**: `python -m src.main` - Connect MIDI controller
-3. **Test Mode**: `python test_synthesis.py` - Verify synthesis works
-4. **GUI Demo**: `python demo_gui.py` - Demo without audio
+```
+python -m src.main
+```
+
+MIDI input is detected and opened automatically if a port is available. The GUI launches regardless.
 
 ## Key Technologies
 
-- **numpy**: Numerical computing for audio synthesis
+- **numpy**: Audio synthesis and wavetable generation
 - **sounddevice**: Real-time audio output
-- **mido**: Pure Python MIDI input handling (no compilation needed)
-- **threading**: Non-blocking MIDI polling
+- **mido**: Pure Python MIDI input handling
+- **tkinter**: GUI (included with Python)
+- **threading**: Non-blocking MIDI polling and GUI update loop
 
 ## Synthesis Details
 
-- Pure sine wave oscillators
-- Up to 16 polyphonic voices
-- 10ms attack, 50ms release envelope
-- Velocity-based amplitude control (0-127)
-- Full MIDI pitch bend support (±2 semitones by default)
-- Voice stealing when max voices exceeded
+- 16-harmonic additive wavetable oscillator (per-harmonic amplitude sliders)
+- Waveform presets: sine, saw, square, triangle, semisine
+- Up to 16 polyphonic voices with voice stealing
+- Full ADSR envelope per voice
+- RMS compressor + peak limiter
+- Effects chain: Low-Pass Filter → Delay → Reverb
+- MIDI pitch bend support (±2 semitones by default)
+
+## GUI Controls
+
+- **Oscillator**: harmonic sliders, live waveform preview, waveform preset buttons
+- **ADSR**: Attack, Decay, Sustain, Release knobs with envelope graph
+- **Filter**: Cutoff and Resonance knobs
+- **Effects**: Reverb (Room, Damp, Wet) and Delay (Time, Feedback, Wet)
+- **Master**: Volume knob and vertical level meter
+- **Transpose**: Vertical slider (±24 semitones)
+- **QWERTY keyboard**: A–L = white keys, W E T Y U O = black keys; Z/X shift octave
 
 ## Development Notes
 
-- All audio processing runs in real-time callback
-- MIDI polling runs in separate thread to prevent audio glitches
-- Normalization prevents clipping with multiple voices
-- Inactive voices are cleaned up immediately
+- Audio callback is allocation-free and runs on the sounddevice thread
+- MIDI polling runs in a separate thread to prevent audio glitches
+- GUI update loop runs in a daemon thread, polling at 20 Hz
+- Keep audio-thread code deterministic; avoid Python object churn per sample
