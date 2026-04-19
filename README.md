@@ -57,6 +57,7 @@ Each note plays through the wavetable oscillator with:
   - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
   - **Chorus**: Stereo LFO-modulated delay (L/R phases offset by 180°); rate 0.05–8 Hz, depth, and wet/dry mix
+  - **Bitcrusher**: Bit-depth reduction (1–24 bits) + sample-rate reduction via sample-and-hold downsampling (factor 1–32); wet/dry mix
 - **Master Volume**: knob range mapped to 0–43% linear; defaults to 70% knob (0.3 linear) for comfortable headroom
 
 ## Architecture
@@ -70,6 +71,7 @@ MIDI / GUI click / QWERTY keyboard
     → Effects Chain (LPF → Reverb → Delay)
     → Master Volume
     → Chorus (mono → stereo)
+    → Bitcrusher
     → Audio Engine (stereo) → Speakers
 ```
 
@@ -96,6 +98,7 @@ synth.set_volume(0.8)
 synth.set_lpf(cutoff_hz=10000, q=0.707)
 synth.set_reverb(room_size=0.5, damping=0.5, wet=0.3)
 synth.set_delay(delay_ms=250, feedback=0.4, wet=0.2)
+synth.set_bitcrusher(bits=8.0, downsample=4, wet=0.5)
 synth.set_wavetable(np.array([1.0, 0.5, 0.0, ...], dtype=np.float32))  # 16 harmonics
 ```
 
