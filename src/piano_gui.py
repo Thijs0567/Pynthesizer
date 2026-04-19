@@ -80,7 +80,7 @@ class PianoGUI:
         
         # Setup window
         self.root.title("PythonSynth Piano with ADSR")
-        num_white_keys = (self.END_OCTAVE - self.START_OCTAVE + 1) * 7
+        num_white_keys = (self.END_OCTAVE - self.START_OCTAVE + 1) * 7 + 1  # +1 for trailing C
         window_width = max(1200, num_white_keys * self.WHITE_KEY_WIDTH + 200)
         self.root.geometry(f"{window_width}x720")
         self.root.configure(bg='#333333')
@@ -122,6 +122,8 @@ class PianoGUI:
         self.canvas.bind('<Motion>', self._on_mouse_motion)
 
         self._draw_piano()
+        self._bind_keyboard()
+        self._draw_kb_labels()
 
         info_frame = tk.Frame(left_frame, bg='#333333')
         info_frame.pack(pady=5)
@@ -132,6 +134,113 @@ class PianoGUI:
         # Master section (Volume + Level meter) on the right
         self._create_master_section(content_frame)
     
+    # QWERTY key → semitone offset within the mapped octave
+    # White keys: A=C, S=D, D=E, F=F, G=G, H=A, J=B, K=C(+1), L=D(+1)
+    # Black keys: W=C#, E=D#, T=F#, Y=G#, U=A#, O=C#(+1)
+    _KB_WHITE = {'a': 0, 's': 2, 'd': 4, 'f': 5, 'g': 7, 'h': 9, 'j': 11, 'k': 12, 'l': 14}
+    _KB_BLACK = {'w': 1, 'e': 3, 't': 6, 'y': 8, 'u': 10, 'o': 13}
+    _KB_ALL   = {**_KB_WHITE, **_KB_BLACK}
+    # Display labels for each key (uppercase for readability)
+    _KB_LABELS = {k: k.upper() for k in {**_KB_WHITE, **_KB_BLACK}}
+
+    def _bind_keyboard(self):
+        self.kb_octave = self.START_OCTAVE + 1  # default: C5, centered on 3-octave layout
+        self._kb_held: set = set()          # keys currently held down
+
+        self.root.bind('<KeyPress>',   self._on_key_press)
+        self.root.bind('<KeyRelease>', self._on_key_release)
+
+    def _kb_shift(self, direction: int):
+        """Shift kb_octave by direction (±1). If at limit, transpose by ±12 instead."""
+        new_oct = self.kb_octave + direction
+        if self.START_OCTAVE <= new_oct <= self.END_OCTAVE:
+            self.kb_octave = new_oct
+            self._draw_kb_labels()
+        else:
+            # At octave limit — try transposing
+            new_transpose = self.transpose + direction * 12
+            if -24 <= new_transpose <= 24:
+                self.transpose = new_transpose
+                self.transpose_scale.set(self.transpose)
+                self.transpose_label.config(text=f"{self.transpose:+d} st")
+
+    def _on_key_press(self, event):
+        ch = event.char.lower() if event.char else ''
+        if ch == 'z':
+            self._kb_shift(-1)
+            return
+        if ch == 'x':
+            self._kb_shift(+1)
+            return
+        if ch in self._KB_ALL and ch not in self._kb_held:
+            self._kb_held.add(ch)
+            semitone = self._KB_ALL[ch]
+            extra_oct = semitone // 12
+            raw_note = (self.kb_octave + extra_oct) * 12 + (semitone % 12)
+            note = self._apply_transpose(raw_note)
+            self.on_note_on(note, 100)
+            # Highlight the visual key (use raw note to find canvas key)
+            if raw_note in self.note_key_map:
+                self._highlight_key(self.note_key_map[raw_note], True)
+
+    def _on_key_release(self, event):
+        ch = event.char.lower() if event.char else ''
+        if ch in self._KB_ALL and ch in self._kb_held:
+            self._kb_held.discard(ch)
+            semitone = self._KB_ALL[ch]
+            extra_oct = semitone // 12
+            raw_note = (self.kb_octave + extra_oct) * 12 + (semitone % 12)
+            note = self._apply_transpose(raw_note)
+            self.on_note_off(note)
+            if raw_note in self.note_key_map:
+                self._highlight_key(self.note_key_map[raw_note], False)
+
+    def _draw_kb_labels(self):
+        """Draw (or redraw) QWERTY shortcut labels on the piano canvas keys."""
+        self.canvas.delete('kb_label')
+
+        # Build a lookup: midi_note → canvas x-centre, y position
+        # Reconstruct key positions the same way _draw_piano does
+        white_midi_offsets = [0, 2, 4, 5, 7, 9, 11]
+        x_pos = 10
+
+        # Map midi_note -> (cx, cy, is_black)
+        note_cx: dict = {}
+        for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
+            for wi in range(len(self.WHITE_KEYS)):
+                midi_note = octave * 12 + white_midi_offsets[wi]
+                cx = x_pos + self.WHITE_KEY_WIDTH // 2
+                cy = 10 + self.WHITE_KEY_HEIGHT - 18
+                note_cx[midi_note] = (cx, cy, False)
+
+                # Black key to the right of this white key
+                black_offsets = {0: 1, 1: 3, 3: 6, 4: 8, 5: 10}
+                if wi in black_offsets:
+                    bx = x_pos + self.WHITE_KEY_WIDTH - self.BLACK_KEY_WIDTH // 2 + self.BLACK_KEY_WIDTH // 2
+                    by = 10 + self.BLACK_KEY_HEIGHT - 14
+                    note_cx[octave * 12 + black_offsets[wi]] = (bx, by, True)
+
+                x_pos += self.WHITE_KEY_WIDTH
+
+        # Trailing C (mirrors _draw_piano)
+        trailing_note = (self.END_OCTAVE + 1) * 12
+        note_cx[trailing_note] = (x_pos + self.WHITE_KEY_WIDTH // 2, 10 + self.WHITE_KEY_HEIGHT - 18, False)
+
+        for ch, semitone in self._KB_ALL.items():
+            extra_oct = semitone // 12
+            note = (self.kb_octave + extra_oct) * 12 + (semitone % 12)
+            if note not in note_cx:
+                continue
+            cx, cy, is_black = note_cx[note]
+            color = '#AAAAFF' if not is_black else '#CCCCFF'
+            self.canvas.create_text(
+                cx, cy,
+                text=ch.upper(),
+                font=('Arial', 7, 'bold'),
+                fill=color,
+                tags='kb_label',
+            )
+
     def _create_adsr_controls(self, parent):
         """ADSR envelope section: 4 knobs on top, envelope graph below."""
         section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
@@ -677,7 +786,8 @@ class PianoGUI:
     
     def _draw_piano(self):
         """Draw all piano keys on the canvas."""
-        self.key_map = {}  # Maps canvas item ID to MIDI note
+        self.key_map = {}       # canvas item ID → MIDI note
+        self.note_key_map = {}  # MIDI note → canvas item ID (last drawn wins for duplicates)
         
         x_pos = 10
         
@@ -693,8 +803,19 @@ class PianoGUI:
                 )
                 
                 self.key_map[key_id] = midi_note
+                self.note_key_map[midi_note] = key_id
                 x_pos += self.WHITE_KEY_WIDTH
-        
+
+        # Trailing C one octave above END_OCTAVE
+        trailing_note = (self.END_OCTAVE + 1) * 12
+        key_id = self.canvas.create_rectangle(
+            x_pos, 10,
+            x_pos + self.WHITE_KEY_WIDTH, 10 + self.WHITE_KEY_HEIGHT,
+            fill='white', outline='black', width=2
+        )
+        self.key_map[key_id] = trailing_note
+        self.note_key_map[trailing_note] = key_id
+
         # Draw black keys on top
         x_pos = 10
         
@@ -732,7 +853,8 @@ class PianoGUI:
                     )
                     
                     self.key_map[key_id] = midi_note
-                
+                    self.note_key_map[midi_note] = key_id
+
                 x_pos += self.WHITE_KEY_WIDTH
     
     def _on_mouse_down(self, event):
