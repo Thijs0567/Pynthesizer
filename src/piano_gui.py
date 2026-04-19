@@ -36,6 +36,7 @@ class PianoGUI:
                  on_reverb_change: Callable = None,
                  on_delay_change: Callable = None,
                  on_wavetable_change: Callable = None,
+                 on_chorus_change: Callable = None,
                  on_panic: Callable = None):
         """
         Initialize the piano GUI.
@@ -55,6 +56,7 @@ class PianoGUI:
         self.on_reverb_change = on_reverb_change or (lambda room, damp, wet: None)
         self.on_delay_change  = on_delay_change  or (lambda ms, fb, wet: None)
         self.on_wavetable_change = on_wavetable_change or (lambda wt: None)
+        self.on_chorus_change = on_chorus_change or (lambda rate, depth, wet: None)
         self.on_panic = on_panic or (lambda: None)
 
         # Wavetable state (16 harmonic amplitudes)
@@ -381,7 +383,7 @@ class PianoGUI:
         self.lpf_q_scale.grid(row=0, column=1, padx=6, pady=4)
 
     def _create_effects_controls(self, parent):
-        """Effects section: Reverb + Delay as two sub-groups."""
+        """Effects section: Reverb, Delay, and Chorus sub-groups."""
         section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
         section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
 
@@ -393,7 +395,7 @@ class PianoGUI:
 
         # ── Reverb ────────────────────────────────────────────────────────
         rev = tk.LabelFrame(groups_row, text="Reverb", bg='#444444',
-                            fg='#AAAAFF', font=("Arial", 9, "bold"),
+                            fg='#AAFFAA', font=("Arial", 9, "bold"),
                             bd=1, relief=tk.GROOVE)
         rev.pack(side=tk.LEFT, padx=4, pady=2)
 
@@ -412,7 +414,7 @@ class PianoGUI:
 
         # ── Delay ─────────────────────────────────────────────────────────
         dly = tk.LabelFrame(groups_row, text="Delay", bg='#444444',
-                            fg='#AAAAFF', font=("Arial", 9, "bold"),
+                            fg='#AAFFAA', font=("Arial", 9, "bold"),
                             bd=1, relief=tk.GROOVE)
         dly.pack(side=tk.LEFT, padx=4, pady=2)
 
@@ -443,6 +445,33 @@ class PianoGUI:
                                     command=self._on_delay_changed)
         self.delay_wet_scale.set(0)
         self.delay_wet_scale.grid(row=0, column=2, padx=5, pady=6)
+
+        # ── Chorus ────────────────────────────────────────────────────────
+        cho = tk.LabelFrame(groups_row, text="Chorus", bg='#444444',
+                            fg='#AAFFAA', font=("Arial", 9, "bold"),
+                            bd=1, relief=tk.GROOVE)
+        cho.pack(side=tk.LEFT, padx=4, pady=4)
+
+        self.chorus_rate_scale = Knob(cho, from_=0, to=100, resolution=1,
+                                      label="Rate", value_format="{:.0f}%",
+                                      initial=30,
+                                      command=self._on_chorus_changed)
+        self.chorus_rate_scale.set(30)
+        self.chorus_rate_scale.grid(row=0, column=0, padx=5, pady=6)
+
+        self.chorus_depth_scale = Knob(cho, from_=0, to=100, resolution=1,
+                                       label="Depth", value_format="{:.0f}%",
+                                       initial=50,
+                                       command=self._on_chorus_changed)
+        self.chorus_depth_scale.set(50)
+        self.chorus_depth_scale.grid(row=0, column=1, padx=5, pady=6)
+
+        self.chorus_wet_scale = Knob(cho, from_=0, to=100, resolution=1,
+                                     label="Wet", value_format="{:.0f}%",
+                                     initial=0,
+                                     command=self._on_chorus_changed)
+        self.chorus_wet_scale.set(0)
+        self.chorus_wet_scale.grid(row=0, column=2, padx=5, pady=6)
 
     def _create_master_section(self, parent):
         """Master section: Volume knob + compact vertical level meter."""
@@ -539,6 +568,15 @@ class PianoGUI:
             float(self.delay_time_scale.get()),
             self.delay_fb_scale.get()  / 100.0,
             self.delay_wet_scale.get() / 100.0,
+        )
+
+    def _on_chorus_changed(self, _):
+        # Rate knob: 0–100% → 0.05–8 Hz (log-ish feel)
+        rate_hz = 0.05 * (160.0 ** (self.chorus_rate_scale.get() / 100.0))
+        self.on_chorus_change(
+            rate_hz,
+            self.chorus_depth_scale.get() / 100.0,
+            self.chorus_wet_scale.get()   / 100.0,
         )
 
     # Harmonic amplitudes for each preset (16 bins, index 0 = fundamental)

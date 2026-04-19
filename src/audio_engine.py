@@ -76,11 +76,12 @@ class AudioEngine:
         if self.audio_callback:
             try:
                 audio_data = self.audio_callback(frames)
-                
-                if self.channels == 1:
+
+                if audio_data.ndim == 2 and audio_data.shape[1] == self.channels:
+                    outdata[:] = audio_data
+                elif self.channels == 1:
                     outdata[:, 0] = audio_data
                 else:
-                    # Stereo - duplicate mono to both channels
                     for ch in range(self.channels):
                         outdata[:, ch] = audio_data
                         

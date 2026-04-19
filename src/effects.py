@@ -1,5 +1,5 @@
 """
-DSP effects chain: MasterVolume, LowPassFilter, Reverb, Delay.
+DSP effects chain: MasterVolume, LowPassFilter, Reverb, Delay, Chorus.
 All classes pre-allocate buffers in __init__; no per-block allocation.
 """
 import math
@@ -234,3 +234,102 @@ class Delay:
     def reset_state(self) -> None:
         self._buf[:] = 0.0
         self._write_ptr = 0
+
+
+class Chorus:
+    """
+    Stereo chorus: two LFO-modulated delay lines (L/R) with opposite LFO phase.
+    Input: mono (N,) array. Output: stereo (N, 2) array.
+    """
+    # Delay range: centre ± depth in samples
+    _DELAY_CENTER_MS = 20.0
+    _MAX_DELAY_MS    = 40.0
+
+    def __init__(self, sample_rate: int, rate_hz: float = 0.5,
+                 depth: float = 0.5, wet: float = 0.0,
+                 max_block_size: int = 4096):
+        self._sr    = sample_rate
+        self._wet   = max(0.0, min(1.0, float(wet)))
+        self._rate  = float(rate_hz)
+        self._depth = max(0.0, min(1.0, float(depth)))
+
+        max_delay = int(self._MAX_DELAY_MS * sample_rate / 1000) + 4
+        self._buf_l = np.zeros(max_delay, dtype=np.float64)
+        self._buf_r = np.zeros(max_delay, dtype=np.float64)
+        self._buf_size = max_delay
+        self._write = 0
+
+        self._lfo_phase = 0.0  # radians, L uses phase, R uses phase + π
+
+        self._out = np.zeros((max_block_size, 2), dtype=np.float32)
+
+    def set_rate(self, rate_hz: float) -> None:
+        self._rate = max(0.01, min(10.0, float(rate_hz)))
+
+    def set_depth(self, depth: float) -> None:
+        self._depth = max(0.0, min(1.0, float(depth)))
+
+    def set_wet(self, wet: float) -> None:
+        self._wet = max(0.0, min(1.0, float(wet)))
+
+    def process(self, signal: np.ndarray) -> np.ndarray:
+        n = len(signal)
+        if n > len(self._out):
+            self._out = np.zeros((n, 2), dtype=np.float32)
+
+        wet   = self._wet
+        dry   = 1.0 - wet
+        center = self._DELAY_CENTER_MS * self._sr / 1000.0
+        # depth scales the LFO swing: 0 → no modulation, 1 → ±center ms
+        swing  = center * self._depth
+        phase_inc = 2.0 * math.pi * self._rate / self._sr
+
+        buf_l    = self._buf_l
+        buf_r    = self._buf_r
+        buf_size = self._buf_size
+        write    = self._write
+        phase    = self._lfo_phase
+        out      = self._out
+
+        for i in range(n):
+            x = float(signal[i])
+
+            # Write dry sample into both delay lines
+            buf_l[write] = x
+            buf_r[write] = x
+
+            # LFO: L and R are π apart for stereo width
+            lfo_l = math.sin(phase)
+            lfo_r = math.sin(phase + math.pi)
+
+            delay_l = center + swing * lfo_l
+            delay_r = center + swing * lfo_r
+
+            # Linear interpolation for fractional delay
+            dl_i = int(delay_l)
+            dl_f = delay_l - dl_i
+            rl0 = (write - dl_i) % buf_size
+            rl1 = (write - dl_i - 1) % buf_size
+            wet_l = buf_l[rl0] * (1.0 - dl_f) + buf_l[rl1] * dl_f
+
+            dr_i = int(delay_r)
+            dr_f = delay_r - dr_i
+            rr0 = (write - dr_i) % buf_size
+            rr1 = (write - dr_i - 1) % buf_size
+            wet_r = buf_r[rr0] * (1.0 - dr_f) + buf_r[rr1] * dr_f
+
+            out[i, 0] = x * dry + wet_l * wet
+            out[i, 1] = x * dry + wet_r * wet
+
+            write = (write + 1) % buf_size
+            phase += phase_inc
+
+        self._write = write
+        self._lfo_phase = phase % (2.0 * math.pi)
+        return out[:n]
+
+    def reset_state(self) -> None:
+        self._buf_l[:] = 0.0
+        self._buf_r[:] = 0.0
+        self._write = 0
+        self._lfo_phase = 0.0

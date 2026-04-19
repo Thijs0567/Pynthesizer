@@ -1,6 +1,6 @@
 # PythonSynth - Polyphonic Synthesizer
 
-A polyphonic wavetable synthesizer with a clickable GUI piano, QWERTY keyboard playability, ADSR, effects, and optional MIDI input.
+A polyphonic wavetable synthesizer with a clickable GUI piano, QWERTY keyboard playability, ADSR, stereo effects, and optional MIDI input.
 
 ## Quick Start
 
@@ -52,10 +52,11 @@ Each note plays through the wavetable oscillator with:
 - **Compressor + Limiter**:
   - RMS compressor with soft knee
   - Peak limiter prevents clipping while preserving dynamics
-- **Effects Chain**:
+- **Effects Chain** (stereo output):
   - **Low-Pass Filter**: Variable cutoff and Q (resonance)
   - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
+  - **Chorus**: Stereo LFO-modulated delay (L/R phases offset by 180°); rate 0.05–8 Hz, depth, and wet/dry mix
 - **Master Volume**: knob range mapped to 0–43% linear; defaults to 70% knob (0.3 linear) for comfortable headroom
 
 ## Architecture
@@ -64,11 +65,12 @@ Each note plays through the wavetable oscillator with:
 MIDI / GUI click / QWERTY keyboard
     → Synthesizer (voice management)
     → Voice Pool (wavetable oscillator + ADSR per note)
-    → Voice Mixer (sum active voices)
+    → Voice Mixer (sum active voices, √N envelope scaling)
     → Compressor (RMS stage + peak limiter)
-    → Effects Chain (LPF → Delay → Reverb)
+    → Effects Chain (LPF → Reverb → Delay)
     → Master Volume
-    → Audio Engine → Speakers
+    → Chorus (mono → stereo)
+    → Audio Engine (stereo) → Speakers
 ```
 
 **Real-time Design**: Audio synthesis runs in callback (zero allocations). MIDI polling runs in a separate thread. GUI updates at 20 Hz in a daemon thread.
@@ -111,8 +113,6 @@ synth.set_wavetable(np.array([1.0, 0.5, 0.0, ...], dtype=np.float32))  # 16 harm
 - MIDI device: optional
 
 ## Known Limitations
-
-- **Mono output** — no stereo or spatial effects
 - **Fixed tuning** — A4 = 440 Hz
 - **Key rollover**: simultaneous QWERTY notes are limited by keyboard hardware (N-key rollover keyboard recommended for full chords)
 

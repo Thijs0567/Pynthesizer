@@ -18,13 +18,13 @@ def main():
     MAX_VOICES = 16
 
     synth = Synthesizer(sample_rate=SAMPLE_RATE, max_voices=MAX_VOICES)
-    audio_engine = AudioEngine(sample_rate=SAMPLE_RATE, blocksize=BLOCKSIZE)
+    audio_engine = AudioEngine(sample_rate=SAMPLE_RATE, blocksize=BLOCKSIZE, channels=2)
 
     level_info = {'current': 0.0, 'peak': 0.0, 'clipping': False}
 
     def audio_callback(frames):
-        audio = synth.generate_audio(frames)
-        current = np.max(np.abs(audio))
+        audio = synth.generate_audio(frames)  # (N, 2) stereo
+        current = float(np.max(np.abs(audio)))
         level_info['current'] = current
         level_info['peak'] = max(level_info['peak'], current)
         level_info['clipping'] = current > 0.90
@@ -65,6 +65,7 @@ def main():
             on_reverb_change=lambda room, damp, wet: synth.set_reverb(room, damp, wet),
             on_delay_change=lambda ms, fb, wet: synth.set_delay(ms, fb, wet),
             on_wavetable_change=lambda wt: synth.set_wavetable(wt),
+            on_chorus_change=lambda rate, depth, wet: synth.set_chorus(rate, depth, wet),
             on_panic=synth.panic,
         )
 

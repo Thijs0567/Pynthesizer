@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Optional
 from src.voice import Voice
 from src.midi_handler import MIDIHandler
-from src.effects import MasterVolume, LowPassFilter, Reverb, Delay
+from src.effects import MasterVolume, LowPassFilter, Reverb, Delay, Chorus
 
 
 class Synthesizer:
@@ -81,6 +81,7 @@ class Synthesizer:
         self._lpf    = LowPassFilter(sample_rate)
         self._reverb = Reverb(sample_rate, wet=0.0)
         self._delay  = Delay(sample_rate, wet=0.0)
+        self._chorus = Chorus(sample_rate, wet=0.0)
 
     @staticmethod
     def note_to_frequency(note: int) -> float:
@@ -118,6 +119,11 @@ class Synthesizer:
         self._delay.set_delay_ms(delay_ms)
         self._delay.set_feedback(feedback)
         self._delay.set_wet(wet)
+
+    def set_chorus(self, rate_hz: float, depth: float, wet: float) -> None:
+        self._chorus.set_rate(rate_hz)
+        self._chorus.set_depth(depth)
+        self._chorus.set_wet(wet)
 
     def set_wavetable(self, amplitudes) -> None:
         """Update harmonic amplitudes for all active and future voices."""
@@ -301,7 +307,9 @@ class Synthesizer:
         output = self._delay.process(output)
         output = self._apply_compression(output)
 
-        return output.astype(np.float32)
+        # Chorus is last — returns (N, 2) stereo
+        stereo = self._chorus.process(output)
+        return stereo.astype(np.float32)
     
     def open_midi_port(self, port_index: int = 0) -> bool:
         """Open a MIDI input port."""
