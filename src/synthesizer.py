@@ -178,8 +178,13 @@ class Synthesizer:
             self.active_voices[note].note_off()
 
     def panic(self):
-        """Immediately silence all voices without blocking future note input."""
+        """Immediately silence all voices and flush effect tails."""
         self.active_voices.clear()
+        self._lpf.reset_state()
+        self._reverb.reset_state()
+        self._delay.reset_state()
+        self._chorus.reset_state()
+        self._bitcrusher.reset_state()
     
     def _apply_compression(self, signal: np.ndarray) -> np.ndarray:
         """
@@ -319,11 +324,11 @@ class Synthesizer:
         output = np.nan_to_num(output, nan=0.0, posinf=1.0, neginf=-1.0)
         
         output = self._volume.process(output)
-        output = self._lpf.process(output)
         output = self._reverb.process(output)
         output = self._delay.process(output)
         output = self._apply_compression(output)
         output = self._bitcrusher.process(output)
+        output = self._lpf.process(output)
 
         # Chorus is last — returns (N, 2) stereo
         stereo = self._chorus.process(output)

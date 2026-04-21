@@ -131,6 +131,7 @@ class PianoGUI:
         row1_right.pack(side=tk.RIGHT, padx=4, fill=tk.Y)
         row1_right_inner = tk.Frame(row1_right, bg=th.BG_ROOT)
         row1_right_inner.pack(anchor='e', fill=tk.Y, expand=True)
+        self._create_lfo_controls(row1_right_inner)
         self._create_filter_controls(row1_right_inner)
         self._create_master_section(row1_right_inner)
 
@@ -140,7 +141,6 @@ class PianoGUI:
         row1_inner.pack(anchor='center')
         self._create_adsr_controls(row1_inner)
         self._create_oscillator_controls(row1_inner)
-        self._create_lfo_controls(row1_inner)
 
         # Row 2: Effects (centered)
         row2 = tk.Frame(root, bg=th.BG_ROOT)
@@ -449,7 +449,7 @@ class PianoGUI:
             command=self._on_lfo_params_changed,
         )
         self.lfo_amp_knob.set(initial["amp"])
-        self.lfo_amp_knob.grid(row=0, column=1, padx=6, pady=4)
+        self.lfo_amp_knob.grid(row=1, column=0, padx=6, pady=4)
 
         # LFO knobs are NOT right-clickable (intentionally).
         # They are not registered in self._assignable.
