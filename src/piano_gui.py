@@ -2,13 +2,15 @@
 Simple clickable piano GUI for the synthesizer with ADSR controls.
 """
 import tkinter as tk
-from tkinter import Canvas, Scale, HORIZONTAL
+from tkinter import Canvas, Scale, HORIZONTAL, filedialog, messagebox
 from typing import Callable, Optional, Dict, Tuple
 import math
+from pathlib import Path
 import numpy as np
 
 from .widgets import Knob, HarmonicSlider
 from .widgets import theme as th
+from . import presets as _presets
 
 
 class PianoGUI:
@@ -904,6 +906,106 @@ class PianoGUI:
         self._refresh_sliders_from_slot()
         self._recompute_current_wt()
 
+    # -- Preset save/load bar ----------------------------------------------
+
+    def _create_preset_bar(self, parent):
+        """Dropdown to load a preset + save-as button. Folders render as submenus."""
+        bar = tk.Frame(parent, bg=th.BG_PANEL)
+        bar.pack(padx=10, pady=(0, 6), fill=tk.X)
+
+        self._preset_menu_btn = tk.Menubutton(
+            bar, text="Preset  ▾", font=th.FONT_LABEL_BOLD,
+            bg=th.BG_INSET, fg=th.TEXT_PRIMARY,
+            activebackground=th.ACCENT, activeforeground=th.TEXT_PRIMARY,
+            relief='flat', bd=0, padx=10, pady=3, cursor='hand2',
+            highlightthickness=1, highlightbackground=th.BORDER_SUBTLE,
+        )
+        self._preset_menu = tk.Menu(
+            self._preset_menu_btn, tearoff=0,
+            bg=th.BG_PANEL, fg=th.TEXT_PRIMARY,
+            activebackground=th.ACCENT, activeforeground=th.TEXT_PRIMARY,
+        )
+        self._preset_menu_btn.config(menu=self._preset_menu)
+        # Rebuild the menu each time it's about to post so new files appear.
+        self._preset_menu_btn.bind('<Button-1>', lambda _e: self._rebuild_preset_menu())
+        self._preset_menu_btn.pack(side=tk.LEFT)
+
+        save_btn = tk.Label(
+            bar, text="Save…", font=th.FONT_LABEL_BOLD,
+            bg=th.BG_INSET, fg=th.TEXT_PRIMARY,
+            padx=10, pady=3, cursor='hand2',
+            highlightthickness=1, highlightbackground=th.BORDER_SUBTLE,
+        )
+        save_btn.bind('<Button-1>', lambda _e: self._save_preset_dialog())
+        save_btn.pack(side=tk.LEFT, padx=(6, 0))
+
+        self._rebuild_preset_menu()
+
+    def _rebuild_preset_menu(self):
+        """Repopulate the preset dropdown from disk. Folders → cascading submenus."""
+        menu = self._preset_menu
+        menu.delete(0, 'end')
+        root = _presets.presets_root()
+        paths = _presets.scan_presets(root)
+        if not paths:
+            menu.add_command(label="(no presets yet)", state='disabled')
+            return
+
+        # Build a nested dict: folder tree of relative path parts.
+        tree: dict = {}
+        for p in paths:
+            rel = p.relative_to(root)
+            parts = rel.parts
+            node = tree
+            for d in parts[:-1]:
+                node = node.setdefault(d, {})
+            node.setdefault('__files__', []).append((parts[-1], p))
+
+        self._populate_preset_menu(menu, tree)
+
+    def _populate_preset_menu(self, menu: tk.Menu, node: dict):
+        for name in sorted(k for k in node.keys() if k != '__files__'):
+            submenu = tk.Menu(
+                menu, tearoff=0,
+                bg=th.BG_PANEL, fg=th.TEXT_PRIMARY,
+                activebackground=th.ACCENT, activeforeground=th.TEXT_PRIMARY,
+            )
+            self._populate_preset_menu(submenu, node[name])
+            menu.add_cascade(label=name, menu=submenu)
+        for fname, path in sorted(node.get('__files__', []), key=lambda t: t[0].lower()):
+            label = fname[:-5] if fname.lower().endswith('.json') else fname
+            menu.add_command(label=label,
+                             command=lambda p=path: self._load_preset_from(p))
+
+    def _save_preset_dialog(self):
+        root = _presets.presets_root()
+        root.mkdir(parents=True, exist_ok=True)
+        path = filedialog.asksaveasfilename(
+            title="Save preset",
+            initialdir=str(root),
+            defaultextension=".json",
+            filetypes=[("Preset JSON", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            data = _presets.capture_state(self)
+            data["name"] = Path(path).stem
+            _presets.save_preset(Path(path), data)
+        except Exception as e:
+            messagebox.showerror("Save preset failed",
+                                 f"{type(e).__name__}: {e}")
+            return
+        self._rebuild_preset_menu()
+
+    def _load_preset_from(self, path: Path):
+        try:
+            data = _presets.load_preset(path)
+            _presets.apply_state(self, data)
+        except Exception as e:
+            messagebox.showerror("Load preset failed",
+                                 f"{type(e).__name__}: {e}")
+
     def _refresh_sliders_from_slot(self):
         """Sync slider positions to the currently selected slot's harmonics."""
         wt = self._wt_a if self._edit_slot == 'A' else self._wt_b
@@ -957,6 +1059,8 @@ class PianoGUI:
 
         tk.Label(section, text="Oscillator", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
+
+        self._create_preset_bar(section)
 
         # Preset buttons row
         preset_row = tk.Frame(section, bg=th.BG_PANEL)
