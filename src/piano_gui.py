@@ -8,6 +8,7 @@ import math
 import numpy as np
 
 from .widgets import Knob, HarmonicSlider
+from .widgets import theme as th
 
 
 class PianoGUI:
@@ -85,71 +86,82 @@ class PianoGUI:
         self.meter_smooth_alpha = 0.7  # Higher = more responsive; 0.3 hid real peaks
         
         # Setup window
-        self.root.title("PythonSynth Piano with ADSR")
-        self.root.geometry("1260x900")
+        self.root.title("PythonSynth")
+        self.root.geometry("1260x940")
         self.root.resizable(False, False)
-        self.root.configure(bg='#333333')
+        self.root.configure(bg=th.BG_ROOT)
 
         num_white_keys = (self.END_OCTAVE - self.START_OCTAVE + 1) * 7 + 1
 
         # Title
-        title_frame = tk.Frame(root, bg='#333333')
-        title_frame.pack(pady=(8, 4))
-        tk.Label(title_frame, text="PythonSynth", font=("Arial", 16, "bold"),
-                fg='white', bg='#333333').pack()
+        title_frame = tk.Frame(root, bg=th.BG_ROOT)
+        title_frame.pack(pady=(14, 8))
+        tk.Label(title_frame, text="PythonSynth", font=th.FONT_TITLE,
+                fg=th.TEXT_PRIMARY, bg=th.BG_ROOT).pack()
+        # Accent underline echoes the piano bezel
+        tk.Frame(title_frame, bg=th.ACCENT, height=2, width=160).pack(pady=(2, 0))
 
         # Row 1: [ADSR + Osc centered] [LPF + Master right-aligned]
-        row1 = tk.Frame(root, bg='#333333')
+        row1 = tk.Frame(root, bg=th.BG_ROOT)
         row1.pack(pady=(6, 2), padx=10, fill=tk.X)
 
-        row1_right = tk.Frame(row1, bg='#333333')
+        row1_right = tk.Frame(row1, bg=th.BG_ROOT)
         row1_right.pack(side=tk.RIGHT, padx=4, fill=tk.Y)
-        row1_right_inner = tk.Frame(row1_right, bg='#333333')
+        row1_right_inner = tk.Frame(row1_right, bg=th.BG_ROOT)
         row1_right_inner.pack(anchor='e', fill=tk.Y, expand=True)
         self._create_filter_controls(row1_right_inner)
         self._create_master_section(row1_right_inner)
 
-        row1_center = tk.Frame(row1, bg='#333333')
+        row1_center = tk.Frame(row1, bg=th.BG_ROOT)
         row1_center.pack(side=tk.LEFT, expand=True)
-        row1_inner = tk.Frame(row1_center, bg='#333333')
+        row1_inner = tk.Frame(row1_center, bg=th.BG_ROOT)
         row1_inner.pack(anchor='center')
         self._create_adsr_controls(row1_inner)
         self._create_oscillator_controls(row1_inner)
 
         # Row 2: Effects (centered)
-        row2 = tk.Frame(root, bg='#333333')
+        row2 = tk.Frame(root, bg=th.BG_ROOT)
         row2.pack(pady=(2, 6), padx=10)
         self._create_effects_controls(row2)
 
         # Row 3: Piano + Transpose (centered)
-        piano_outer = tk.Frame(root, bg='#333333')
-        piano_outer.pack(pady=4, fill=tk.X)
+        piano_outer = tk.Frame(root, bg=th.BG_ROOT)
+        piano_outer.pack(pady=(6, 4), fill=tk.X)
 
-        piano_center = tk.Frame(piano_outer, bg='#333333')
+        piano_center = tk.Frame(piano_outer, bg=th.BG_ROOT)
         piano_center.pack(anchor='center')
 
-        piano_row = tk.Frame(piano_center, bg='#333333')
+        piano_row = tk.Frame(piano_center, bg=th.BG_ROOT)
         piano_row.pack()
 
         self._create_transpose_slider(piano_row)
 
         canvas_width = num_white_keys * self.WHITE_KEY_WIDTH + 20
-        self.canvas = Canvas(piano_row, bg='#333333', highlightthickness=0,
+        # Piano bezel: accent ring → dark pinstripe → inset panel → canvas
+        bezel_outer = tk.Frame(piano_row, bg=th.ACCENT)
+        bezel_outer.pack(side=tk.LEFT, padx=(10, 0), pady=6)
+        bezel_mid = tk.Frame(bezel_outer, bg=th.BORDER_SUBTLE)
+        bezel_mid.pack(padx=2, pady=2)
+        bezel_inner = tk.Frame(bezel_mid, bg=th.BG_INSET)
+        bezel_inner.pack(padx=1, pady=1)
+
+        self.canvas = Canvas(bezel_inner, bg=th.BG_INSET, highlightthickness=0,
                            width=canvas_width, height=220)
-        self.canvas.pack(side=tk.LEFT, pady=6)
+        self.canvas.pack(padx=10, pady=10)
 
         self.canvas.bind('<Button-1>', self._on_mouse_down)
         self.canvas.bind('<ButtonRelease-1>', self._on_mouse_up)
         self.canvas.bind('<Motion>', self._on_mouse_motion)
 
         self._draw_piano()
+        self._draw_piano_jewelry(canvas_width, 220)
         self._bind_keyboard()
         self._draw_kb_labels()
 
-        info_frame = tk.Frame(piano_center, bg='#333333')
-        info_frame.pack(pady=2)
+        info_frame = tk.Frame(piano_center, bg=th.BG_ROOT)
+        info_frame.pack(pady=(8, 2))
         self.info_label = tk.Label(info_frame, text="Active voices: 0",
-                                   font=("Arial", 10), fg='#00AA00', bg='#333333')
+                                   font=th.FONT_LABEL, fg=th.ACCENT, bg=th.BG_ROOT)
         self.info_label.pack()
     
     # QWERTY key → semitone offset within the mapped octave
@@ -254,24 +266,25 @@ class PianoGUI:
             if note not in note_cx:
                 continue
             cx, cy, is_black = note_cx[note]
-            color = '#AAAAFF' if not is_black else '#CCCCFF'
+            color = th.ACCENT if not is_black else th.ACCENT_MUTED
             self.canvas.create_text(
                 cx, cy,
                 text=ch.upper(),
-                font=('Arial', 7, 'bold'),
+                font=(th.FONT_FAMILY, 7, 'bold'),
                 fill=color,
                 tags='kb_label',
             )
 
     def _create_adsr_controls(self, parent):
         """ADSR envelope section: 4 knobs on top, envelope graph below."""
-        section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
+        section = tk.Frame(parent, bg=th.BG_PANEL,
+                           highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
 
-        tk.Label(section, text="ADSR Envelope", font=("Arial", 11, "bold"),
-                 fg='white', bg='#444444').pack(pady=(6, 2))
+        tk.Label(section, text="ADSR Envelope", font=th.FONT_SECTION,
+                 fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
-        knob_row = tk.Frame(section, bg='#444444')
+        knob_row = tk.Frame(section, bg=th.BG_PANEL)
         knob_row.pack(padx=10, pady=(2, 4))
 
         self.attack_scale = Knob(knob_row, from_=1, to=500, resolution=1,
@@ -302,10 +315,10 @@ class PianoGUI:
         self.release_scale.set(int(self.release * 1000))
         self.release_scale.grid(row=0, column=3, padx=6, pady=4)
 
-        self.envelope_canvas = Canvas(section, bg='#1a1a1a', highlightthickness=1,
-                                      highlightbackground='#555555',
+        self.envelope_canvas = Canvas(section, bg=th.BG_INSET, highlightthickness=1,
+                                      highlightbackground=th.BORDER_SUBTLE,
                                       width=300, height=100)
-        self.envelope_canvas.pack(padx=10, pady=(2, 8))
+        self.envelope_canvas.pack(padx=10, pady=(2, 10))
 
         self.envelope_canvas.bind('<Configure>', lambda _: self._draw_envelope())
 
@@ -314,27 +327,33 @@ class PianoGUI:
         return max(0, min(127, raw_note + self.transpose))
 
     def _create_transpose_slider(self, parent: tk.Frame):
-        frame = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        frame.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.Y)
+        # Accent left-edge echoes the piano bezel
+        wrapper = tk.Frame(parent, bg=th.ACCENT)
+        wrapper.pack(side=tk.LEFT, padx=(0, 6), pady=10, fill=tk.Y)
+        frame = tk.Frame(wrapper, bg=th.BG_PANEL,
+                         highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        frame.pack(side=tk.LEFT, padx=(2, 0), pady=0, fill=tk.Y)
 
-        tk.Label(frame, text="Transpose", font=("Arial", 8, "bold"),
-                 fg='#AAAAFF', bg='#444444').pack(pady=(3, 0))
+        tk.Label(frame, text="Transpose", font=th.FONT_SUBGROUP,
+                 fg=th.ACCENT_MUTED, bg=th.BG_PANEL).pack(pady=(6, 2))
 
         # from_=2 at top (higher pitch), to=-2 at bottom; each step = 1 octave
         self.transpose_scale = Scale(
             frame, from_=2, to=-2, orient=tk.VERTICAL,
-            bg='#555555', fg='white', length=200,
+            bg=th.BG_PANEL, fg=th.TEXT_PRIMARY, length=200,
+            troughcolor=th.BG_INSET, activebackground=th.ACCENT_MUTED,
+            highlightthickness=0, bd=0,
             tickinterval=1, resolution=1,
             command=self._on_transpose_changed,
         )
         self.transpose_scale.set(0)
-        self.transpose_scale.pack(padx=5)
+        self.transpose_scale.pack(padx=6)
 
         self.transpose_label = tk.Label(
-            frame, text="0 oct", font=("Arial", 8),
-            fg='#AAAAFF', bg='#444444',
+            frame, text="0 oct", font=th.FONT_VALUE,
+            fg=th.TEXT_SECONDARY, bg=th.BG_PANEL,
         )
-        self.transpose_label.pack(pady=(0, 3))
+        self.transpose_label.pack(pady=(0, 6))
 
     def _on_transpose_changed(self, _):
         octs = self.transpose_scale.get()
@@ -357,14 +376,15 @@ class PianoGUI:
 
     def _create_filter_controls(self, parent):
         """Low-pass filter section: Cutoff + Q as knobs."""
-        section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
+        section = tk.Frame(parent, bg=th.BG_PANEL,
+                           highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
 
-        tk.Label(section, text="LPF", font=("Arial", 11, "bold"),
-                 fg='white', bg='#444444').pack(pady=(6, 2))
+        tk.Label(section, text="LPF", font=th.FONT_SECTION,
+                 fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
-        knob_row = tk.Frame(section, bg='#444444')
-        knob_row.pack(padx=10, pady=(2, 8))
+        knob_row = tk.Frame(section, bg=th.BG_PANEL)
+        knob_row.pack(padx=10, pady=(2, 10))
 
         def _cutoff_fmt(v):
             hz = 20.0 * (1000.0 ** (v / 100.0))
@@ -385,22 +405,30 @@ class PianoGUI:
         self.lpf_q_scale.grid(row=1, column=0, padx=6, pady=4)
 
     def _create_effects_controls(self, parent):
-        """Effects section: Reverb, Delay, and Chorus sub-groups."""
-        section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
+        """Effects section: Reverb, Delay, Chorus, and Bitcrusher sub-groups."""
+        section = tk.Frame(parent, bg=th.BG_PANEL,
+                           highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
 
-        tk.Label(section, text="Effects", font=("Arial", 11, "bold"),
-                 fg='white', bg='#444444').pack(pady=(6, 2))
+        tk.Label(section, text="Effects", font=th.FONT_SECTION,
+                 fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
-        groups_row = tk.Frame(section, bg='#444444')
-        groups_row.pack(padx=8, pady=(2, 8))
+        groups_row = tk.Frame(section, bg=th.BG_PANEL)
+        groups_row.pack(padx=10, pady=(2, 10))
+
+        def _subgroup(parent_, title: str) -> tk.Frame:
+            """Sub-group: 1px accent top border + uppercase caption, no box."""
+            wrap = tk.Frame(parent_, bg=th.BG_PANEL)
+            wrap.pack(side=tk.LEFT, padx=8, pady=2, anchor='n')
+            tk.Frame(wrap, bg=th.ACCENT, height=1).pack(fill=tk.X, padx=2)
+            tk.Label(wrap, text=title.upper(), font=th.FONT_SUBGROUP,
+                     fg=th.ACCENT_MUTED, bg=th.BG_PANEL).pack(pady=(3, 2))
+            body = tk.Frame(wrap, bg=th.BG_PANEL)
+            body.pack()
+            return body
 
         # ── Reverb ────────────────────────────────────────────────────────
-        rev = tk.LabelFrame(groups_row, text="Reverb", bg='#444444',
-                            fg='#AAFFAA', font=("Arial", 9, "bold"),
-                            bd=1, relief=tk.GROOVE)
-        rev.pack(side=tk.LEFT, padx=4, pady=2)
-
+        rev = _subgroup(groups_row, "Reverb")
         for col, (lbl, attr, default) in enumerate([
             ("Room", "reverb_room_scale", 50),
             ("Damp", "reverb_damp_scale", 50),
@@ -411,111 +439,106 @@ class PianoGUI:
                      initial=default,
                      command=self._on_reverb_changed)
             k.set(default)
-            k.grid(row=0, column=col, padx=5, pady=6)
+            k.grid(row=0, column=col, padx=5, pady=4)
             setattr(self, attr, k)
 
         # ── Delay ─────────────────────────────────────────────────────────
-        dly = tk.LabelFrame(groups_row, text="Delay", bg='#444444',
-                            fg='#AAFFAA', font=("Arial", 9, "bold"),
-                            bd=1, relief=tk.GROOVE)
-        dly.pack(side=tk.LEFT, padx=4, pady=2)
+        dly = _subgroup(groups_row, "Delay")
 
-        time_col = tk.Frame(dly, bg='#444444')
-        time_col.grid(row=0, column=0, padx=5, pady=6, sticky='n')
-        tk.Label(time_col, text="Time", font=("Arial", 9, "bold"),
-                 fg='#AAAAFF', bg='#444444').pack()
+        time_col = tk.Frame(dly, bg=th.BG_PANEL)
+        time_col.grid(row=0, column=0, padx=5, pady=4, sticky='n')
+        tk.Label(time_col, text="Time", font=th.FONT_LABEL_BOLD,
+                 fg=th.ACCENT_MUTED, bg=th.BG_PANEL).pack()
         self.delay_time_scale = Scale(time_col, from_=10, to=1000,
                                       orient=HORIZONTAL,
-                                      bg='#555555', fg='white', length=120,
+                                      bg=th.BG_PANEL, fg=th.TEXT_PRIMARY, length=120,
+                                      troughcolor=th.BG_INSET,
+                                      activebackground=th.ACCENT_MUTED,
+                                      highlightthickness=0, bd=0,
                                       label="", showvalue=True,
                                       command=self._on_delay_changed)
         self.delay_time_scale.set(250)
         self.delay_time_scale.pack()
-        tk.Label(time_col, text="ms", font=("Arial", 8),
-                 fg='#888888', bg='#444444').pack()
+        tk.Label(time_col, text="ms", font=th.FONT_VALUE,
+                 fg=th.TEXT_SECONDARY, bg=th.BG_PANEL).pack()
 
         self.delay_fb_scale = Knob(dly, from_=0, to=90, resolution=1,
                                    label="Feedback", value_format="{:.0f}%",
                                    initial=40,
                                    command=self._on_delay_changed)
         self.delay_fb_scale.set(40)
-        self.delay_fb_scale.grid(row=0, column=1, padx=5, pady=6)
+        self.delay_fb_scale.grid(row=0, column=1, padx=5, pady=4)
 
         self.delay_wet_scale = Knob(dly, from_=0, to=100, resolution=1,
                                     label="Wet", value_format="{:.0f}%",
                                     initial=0,
                                     command=self._on_delay_changed)
         self.delay_wet_scale.set(0)
-        self.delay_wet_scale.grid(row=0, column=2, padx=5, pady=6)
+        self.delay_wet_scale.grid(row=0, column=2, padx=5, pady=4)
 
         # ── Chorus ────────────────────────────────────────────────────────
-        cho = tk.LabelFrame(groups_row, text="Chorus", bg='#444444',
-                            fg='#AAFFAA', font=("Arial", 9, "bold"),
-                            bd=1, relief=tk.GROOVE)
-        cho.pack(side=tk.LEFT, padx=4, pady=4)
+        cho = _subgroup(groups_row, "Chorus")
 
         self.chorus_rate_scale = Knob(cho, from_=0, to=100, resolution=1,
                                       label="Rate", value_format="{:.0f}%",
                                       initial=30,
                                       command=self._on_chorus_changed)
         self.chorus_rate_scale.set(30)
-        self.chorus_rate_scale.grid(row=0, column=0, padx=5, pady=6)
+        self.chorus_rate_scale.grid(row=0, column=0, padx=5, pady=4)
 
         self.chorus_depth_scale = Knob(cho, from_=0, to=100, resolution=1,
                                        label="Depth", value_format="{:.0f}%",
                                        initial=50,
                                        command=self._on_chorus_changed)
         self.chorus_depth_scale.set(50)
-        self.chorus_depth_scale.grid(row=0, column=1, padx=5, pady=6)
+        self.chorus_depth_scale.grid(row=0, column=1, padx=5, pady=4)
 
         self.chorus_wet_scale = Knob(cho, from_=0, to=100, resolution=1,
                                      label="Wet", value_format="{:.0f}%",
                                      initial=0,
                                      command=self._on_chorus_changed)
         self.chorus_wet_scale.set(0)
-        self.chorus_wet_scale.grid(row=0, column=2, padx=5, pady=6)
+        self.chorus_wet_scale.grid(row=0, column=2, padx=5, pady=4)
 
         # ── Bitcrusher ────────────────────────────────────────────────────
-        bc = tk.LabelFrame(groups_row, text="Bitcrusher", bg='#444444',
-                           fg='#AAFFAA', font=("Arial", 9, "bold"),
-                           bd=1, relief=tk.GROOVE)
-        bc.pack(side=tk.LEFT, padx=4, pady=4)
+        bc = _subgroup(groups_row, "Bitcrusher")
 
         self.bc_bits_scale = Knob(bc, from_=1, to=16, resolution=1,
                                   label="Bits", value_format="{:.0f} bit",
                                   initial=16,
                                   command=self._on_bitcrusher_changed)
         self.bc_bits_scale.set(16)
-        self.bc_bits_scale.grid(row=0, column=0, padx=5, pady=6)
+        self.bc_bits_scale.grid(row=0, column=0, padx=5, pady=4)
 
         self.bc_ds_scale = Knob(bc, from_=1, to=32, resolution=1,
                                 label="Downsamp", value_format="÷{:.0f}",
                                 initial=1,
                                 command=self._on_bitcrusher_changed)
         self.bc_ds_scale.set(1)
-        self.bc_ds_scale.grid(row=0, column=1, padx=5, pady=6)
+        self.bc_ds_scale.grid(row=0, column=1, padx=5, pady=4)
 
         self.bc_wet_scale = Knob(bc, from_=0, to=100, resolution=1,
                                  label="Wet", value_format="{:.0f}%",
                                  initial=0,
                                  command=self._on_bitcrusher_changed)
         self.bc_wet_scale.set(0)
-        self.bc_wet_scale.grid(row=0, column=2, padx=5, pady=6)
+        self.bc_wet_scale.grid(row=0, column=2, padx=5, pady=4)
 
     def _create_master_section(self, parent):
         """Master section: Volume knob + compact vertical level meter."""
         METER_W, METER_H, MARGIN = 28, 120, 3
 
-        section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
+        section = tk.Frame(parent, bg=th.BG_PANEL,
+                           highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
 
-        tk.Label(section, text="Master", font=("Arial", 11, "bold"),
-                 fg='white', bg='#444444').pack(pady=(6, 2))
+        tk.Label(section, text="Master", font=th.FONT_SECTION,
+                 fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
-        tk.Button(section, text="PANIC", font=("Arial", 8, "bold"),
-                  fg='white', bg='#882222', activebackground='#FF3333',
-                  relief=tk.RAISED, bd=2, padx=6, pady=2,
-                  command=self._on_panic).pack(pady=(0, 4))
+        tk.Button(section, text="PANIC", font=th.FONT_LABEL_BOLD,
+                  fg=th.TEXT_PRIMARY, bg=th.DANGER, activebackground=th.DANGER_ACTIVE,
+                  relief=tk.FLAT, bd=0, padx=10, pady=3,
+                  command=self._on_panic).pack(pady=(0, 6))
 
         self.volume_scale = Knob(section, from_=0, to=100, resolution=1,
                                  label="Volume", value_format="{:.0f}%",
@@ -525,15 +548,15 @@ class PianoGUI:
         self.volume_scale.pack(pady=(0, 4))
         self._on_volume_changed(None)
 
-        self.gain_canvas = Canvas(section, bg='#1a1a1a', highlightthickness=1,
-                                  highlightbackground='#555555',
+        self.gain_canvas = Canvas(section, bg=th.BG_INSET, highlightthickness=1,
+                                  highlightbackground=th.BORDER_SUBTLE,
                                   width=METER_W, height=METER_H)
         self.gain_canvas.pack(padx=8, pady=(0, 4))
 
         self.level_label = tk.Label(section, text="0%",
-                                    font=("Arial", 8), fg='#00AA00', bg='#444444',
-                                    justify=tk.CENTER)
-        self.level_label.pack(pady=(0, 6))
+                                    font=th.FONT_VALUE, fg=th.TEXT_SECONDARY,
+                                    bg=th.BG_PANEL, justify=tk.CENTER)
+        self.level_label.pack(pady=(0, 8))
 
         # Pre-create persistent canvas items to avoid flicker from delete/recreate
         mh = METER_H - MARGIN * 2
@@ -544,17 +567,17 @@ class PianoGUI:
         self._mh = METER_H
 
         self._gc_bg    = self.gain_canvas.create_rectangle(MARGIN, MARGIN, METER_W - MARGIN, METER_H - MARGIN,
-                                                           fill='#0a0a0a', outline='#555555')
+                                                           fill=th.BG_INSET, outline=th.BORDER_SUBTLE)
         self._gc_warn  = self.gain_canvas.create_rectangle(MARGIN, clip_y, METER_W - MARGIN, warn_y,
-                                                           fill='#3a3a00', outline='')
+                                                           fill=th.METER_WARN_BG, outline='')
         self._gc_clip  = self.gain_canvas.create_rectangle(MARGIN, MARGIN, METER_W - MARGIN, clip_y,
-                                                           fill='#3a0000', outline='')
+                                                           fill=th.METER_CLIP_BG, outline='')
         self._gc_bar   = self.gain_canvas.create_rectangle(MARGIN, METER_H - MARGIN, METER_W - MARGIN, METER_H - MARGIN,
-                                                           fill='#00FF00', outline='')
+                                                           fill=th.METER_SAFE, outline='')
         self._gc_l70   = self.gain_canvas.create_line(MARGIN, warn_y, METER_W - MARGIN, warn_y,
-                                                      fill='#555555', width=1)
+                                                      fill=th.METER_GUIDE, width=1)
         self._gc_l95   = self.gain_canvas.create_line(MARGIN, MARGIN + mh * (1.0 - 0.95), METER_W - MARGIN,
-                                                      MARGIN + mh * (1.0 - 0.95), fill='#555555', width=1)
+                                                      MARGIN + mh * (1.0 - 0.95), fill=th.METER_GUIDE, width=1)
 
     def midi_note_on(self, note: int, velocity: int):
         self.on_note_on(note, velocity)
@@ -653,7 +676,7 @@ class PianoGUI:
         for x, y in zip(xs, ys):
             coords.extend([float(x), float(y)])
         if len(coords) >= 4:
-            canvas.create_line(coords, fill='#00FF00', width=1, smooth=False)
+            canvas.create_line(coords, fill=th.ACCENT, width=1, smooth=False)
 
     def _apply_preset(self, name: str):
         wt = self._make_preset_waveform(name)
@@ -665,24 +688,25 @@ class PianoGUI:
 
     def _create_oscillator_controls(self, parent):
         """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
-        section = tk.Frame(parent, bg='#444444', relief=tk.RIDGE, bd=1)
-        section.pack(side=tk.LEFT, padx=6, pady=4, fill=tk.Y)
+        section = tk.Frame(parent, bg=th.BG_PANEL,
+                           highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
 
-        tk.Label(section, text="Oscillator", font=("Arial", 11, "bold"),
-                 fg='white', bg='#444444').pack(pady=(6, 2))
+        tk.Label(section, text="Oscillator", font=th.FONT_SECTION,
+                 fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
         # Preset buttons row
-        preset_row = tk.Frame(section, bg='#444444')
-        preset_row.pack(padx=8, pady=(0, 4))
+        preset_row = tk.Frame(section, bg=th.BG_PANEL)
+        preset_row.pack(padx=10, pady=(0, 4))
 
         self._preset_btn_canvases = {}
         for name in ('sine', 'saw', 'square', 'triangle', 'semisine'):
-            btn_frame = tk.Frame(preset_row, bg='#555555', relief=tk.RAISED, bd=2,
+            btn_frame = tk.Frame(preset_row, bg=th.BORDER_SUBTLE,
                                  cursor='hand2')
             btn_frame.pack(side=tk.LEFT, padx=3)
-            c = tk.Canvas(btn_frame, bg='#1a1a1a', highlightthickness=0,
+            c = tk.Canvas(btn_frame, bg=th.BG_INSET, highlightthickness=0,
                           width=54, height=36)
-            c.pack()
+            c.pack(padx=1, pady=1)
             wt = self._make_preset_waveform(name)
             # Draw after packing so winfo_width is correct on next update
             c.bind('<Configure>', lambda _, cv=c, w=wt:
@@ -692,13 +716,13 @@ class PianoGUI:
             self._preset_btn_canvases[name] = c
 
         self.waveform_canvas = tk.Canvas(
-            section, bg='#1a1a1a', highlightthickness=1,
-            highlightbackground='#555555', width=320, height=80,
+            section, bg=th.BG_INSET, highlightthickness=1,
+            highlightbackground=th.BORDER_SUBTLE, width=320, height=80,
         )
-        self.waveform_canvas.pack(padx=8, pady=(2, 4))
+        self.waveform_canvas.pack(padx=10, pady=(4, 6))
 
-        slider_row = tk.Frame(section, bg='#444444')
-        slider_row.pack(padx=8, pady=(0, 8))
+        slider_row = tk.Frame(section, bg=th.BG_PANEL)
+        slider_row.pack(padx=10, pady=(0, 10))
 
         self.harmonic_sliders = []
         for k in range(16):
@@ -709,7 +733,7 @@ class PianoGUI:
                 label=label,
                 initial=initial,
                 command=lambda val, idx=k: self._on_harmonic_changed(idx, val),
-                bg='#444444',
+                bg=th.BG_PANEL,
             )
             slider.grid(row=0, column=k, padx=1)
             self.harmonic_sliders.append(slider)
@@ -732,7 +756,7 @@ class PianoGUI:
         draw_h = h - my * 2
         mid_y = my + draw_h // 2
 
-        c.create_line(mx, mid_y, w - mx, mid_y, fill='#333333', width=1)
+        c.create_line(mx, mid_y, w - mx, mid_y, fill=th.BORDER_SUBTLE, width=1)
 
         N = 200
         phases = np.linspace(0, 2 * np.pi, N, endpoint=False)
@@ -751,7 +775,7 @@ class PianoGUI:
         for x, y in zip(xs, ys):
             coords.extend([float(x), float(y)])
         if len(coords) >= 4:
-            c.create_line(coords, fill='#00FF00', width=1, smooth=False)
+            c.create_line(coords, fill=th.ACCENT, width=2, smooth=False)
 
     def _draw_envelope(self):
         """Draw ADSR envelope visualization."""
@@ -779,15 +803,15 @@ class PianoGUI:
         
         # Draw grid
         self.envelope_canvas.create_line(margin_x, h - margin_y, w - margin_x, h - margin_y,
-                                        fill='#555555', width=1)  # Time axis
+                                        fill=th.BORDER_SUBTLE, width=1)  # Time axis
         self.envelope_canvas.create_line(margin_x, margin_y, margin_x, h - margin_y,
-                                        fill='#555555', width=1)  # Amplitude axis
-        
+                                        fill=th.BORDER_SUBTLE, width=1)  # Amplitude axis
+
         # Draw labels
         self.envelope_canvas.create_text(margin_x - 15, h - margin_y, text='0',
-                                        fill='#888888', font=('Arial', 8))
+                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
         self.envelope_canvas.create_text(margin_x - 15, margin_y + graph_h, text='1',
-                                        fill='#888888', font=('Arial', 8))
+                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
         
         # Build envelope points
         points = []
@@ -824,32 +848,32 @@ class PianoGUI:
                 x1, y1 = points[i]
                 x2, y2 = points[i + 1]
                 self.envelope_canvas.create_line(x1, y1, x2, y2,
-                                               fill='#00FF00', width=2)
-            
+                                               fill=th.ACCENT, width=2)
+
             # Draw points
             for x, y in points:
                 self.envelope_canvas.create_oval(x - 3, y - 3, x + 3, y + 3,
-                                               fill='#00FF00', outline='#00AA00')
-        
+                                               fill=th.ACCENT, outline=th.ACCENT_MUTED)
+
         # Draw attack label
         attack_x = margin_x + self.attack * time_scale / 2
         self.envelope_canvas.create_text(attack_x, h - margin_y + 15, text='A',
-                                        fill='#888888', font=('Arial', 8))
-        
+                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
+
         # Draw decay label
         decay_x = margin_x + self.attack * time_scale + self.decay * time_scale / 2
         self.envelope_canvas.create_text(decay_x, h - margin_y + 15, text='D',
-                                        fill='#888888', font=('Arial', 8))
-        
+                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
+
         # Draw sustain label
         sustain_x = margin_x + (self.attack + self.decay) * time_scale + 0.5 * time_scale
         self.envelope_canvas.create_text(sustain_x, h - margin_y + 15, text='S',
-                                        fill='#888888', font=('Arial', 8))
-        
+                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
+
         # Draw release label
         release_x = margin_x + (self.attack + self.decay + 1.0) * time_scale + self.release * time_scale / 2
         self.envelope_canvas.create_text(release_x, h - margin_y + 15, text='R',
-                                        fill='#888888', font=('Arial', 8))
+                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
     
     def update_gain_meter(self, current_level: float, peak_level: float, is_clipping: bool = False):
         self.smoothed_level = (self.meter_smooth_alpha * current_level
@@ -868,13 +892,13 @@ class PianoGUI:
         bar_top = h - m - mh * normalized
 
         if is_clipping:
-            color = '#FF3333'
+            color = th.METER_CLIP
         elif db > -6:
-            color = '#FFAA00'
+            color = th.METER_HOT
         elif db > -12:
-            color = '#FFFF00'
+            color = th.METER_WARN
         else:
-            color = '#00FF00'
+            color = th.METER_SAFE
 
         self.gain_canvas.coords(self._gc_bar, m, bar_top, w - m, h - m)
         self.gain_canvas.itemconfig(self._gc_bar, fill=color)
@@ -883,7 +907,7 @@ class PianoGUI:
         db_text = f"{db:.0f}dB" if self.current_level > 1e-10 else "-inf"
         self.level_label.config(
             text=f"{db_text}{clip_text}",
-            fg='#FF3333' if is_clipping else '#00AA00',
+            fg=th.METER_CLIP if is_clipping else th.TEXT_SECONDARY,
         )
     
     def _draw_c_labels(self):
@@ -894,15 +918,39 @@ class PianoGUI:
             sounding_oct = (octave - 1) + transpose_octs
             self.canvas.create_text(
                 x_pos + self.WHITE_KEY_WIDTH // 2, 22,
-                text=f"C{sounding_oct}", font=("Arial", 7), fill='#888888', tags='c_label',
+                text=f"C{sounding_oct}", font=th.FONT_SMALL, fill=th.TEXT_SECONDARY, tags='c_label',
             )
             x_pos += len(self.WHITE_KEYS) * self.WHITE_KEY_WIDTH
         # Trailing C
         sounding_oct = self.END_OCTAVE + transpose_octs
         self.canvas.create_text(
             x_pos + self.WHITE_KEY_WIDTH // 2, 22,
-            text=f"C{sounding_oct}", font=("Arial", 7), fill='#888888', tags='c_label',
+            text=f"C{sounding_oct}", font=th.FONT_SMALL, fill=th.TEXT_SECONDARY, tags='c_label',
         )
+
+    def _draw_piano_jewelry(self, canvas_w: int, canvas_h: int):
+        """Draw decorative accents on the piano canvas itself."""
+        # Subtle accent highlight above the keys (1px line across the top)
+        top_y = 6
+        self.canvas.create_line(
+            4, top_y, canvas_w - 4, top_y,
+            fill=th.ACCENT_MUTED, width=1, tags='jewelry',
+        )
+        # L-bracket corner accents
+        LEN, W = 10, 2
+        corners = [
+            (2, 2, 1, 1),                                   # top-left
+            (canvas_w - 2, 2, -1, 1),                       # top-right
+            (2, canvas_h - 2, 1, -1),                       # bottom-left
+            (canvas_w - 2, canvas_h - 2, -1, -1),           # bottom-right
+        ]
+        for x, y, dx, dy in corners:
+            self.canvas.create_line(
+                x, y, x + LEN * dx, y, fill=th.ACCENT, width=W, tags='jewelry',
+            )
+            self.canvas.create_line(
+                x, y, x, y + LEN * dy, fill=th.ACCENT, width=W, tags='jewelry',
+            )
 
     def _get_midi_note(self, white_key_index: int, octave: int) -> int:
         """Get MIDI note number from white key index and octave."""
@@ -924,9 +972,9 @@ class PianoGUI:
                 key_id = self.canvas.create_rectangle(
                     x_pos, 10,
                     x_pos + self.WHITE_KEY_WIDTH, 10 + self.WHITE_KEY_HEIGHT,
-                    fill='white', outline='black', width=2
+                    fill='#F0F0F2', outline='#0A0A0E', width=1
                 )
-                
+
                 self.key_map[key_id] = midi_note
                 self.note_key_map[midi_note] = key_id
                 x_pos += self.WHITE_KEY_WIDTH
@@ -936,7 +984,7 @@ class PianoGUI:
         key_id = self.canvas.create_rectangle(
             x_pos, 10,
             x_pos + self.WHITE_KEY_WIDTH, 10 + self.WHITE_KEY_HEIGHT,
-            fill='white', outline='black', width=2
+            fill='#F0F0F2', outline='#0A0A0E', width=1
         )
         self.key_map[key_id] = trailing_note
         self.note_key_map[trailing_note] = key_id
@@ -976,7 +1024,7 @@ class PianoGUI:
                     key_id = self.canvas.create_rectangle(
                         black_x, 10,
                         black_x + self.BLACK_KEY_WIDTH, 10 + self.BLACK_KEY_HEIGHT,
-                        fill='black', outline='#333333', width=1
+                        fill='#0A0A0E', outline=th.BORDER_SUBTLE, width=1
                     )
                     
                     self.key_map[key_id] = midi_note
@@ -1039,22 +1087,17 @@ class PianoGUI:
     
     def _highlight_key(self, key_id: int, highlighted: bool):
         """Highlight or unhighlight a key."""
+        note_num = self.key_map[key_id]
+        note_in_octave = note_num % 12
+        black_key_midi = [1, 3, 6, 8, 10]
+        is_black = note_in_octave in black_key_midi
+
         if highlighted:
-            current_fill = self.canvas.itemcget(key_id, 'fill')
-            if current_fill == 'white':
-                self.canvas.itemconfig(key_id, fill='#CCCCCC')
-            else:
-                self.canvas.itemconfig(key_id, fill='#444444')
+            # Accent tint when pressed: lighter for white keys, muted accent for black
+            self.canvas.itemconfig(key_id, fill=th.ACCENT_MUTED if is_black else th.ACCENT)
         else:
-            note_num = self.key_map[key_id]
-            note_in_octave = note_num % 12
-            black_key_midi = [1, 3, 6, 8, 10]
-            
-            if note_in_octave in black_key_midi:
-                self.canvas.itemconfig(key_id, fill='black')
-            else:
-                self.canvas.itemconfig(key_id, fill='white')
+            self.canvas.itemconfig(key_id, fill='#0A0A0E' if is_black else '#F0F0F2')
     
     def update_voice_count(self, count: int):
         """Update the active voice count display."""
-        self.info_label.config(text=f"Active voices: {count}/16")
+        self.info_label.config(text=f"Active voices: {count} / 16")

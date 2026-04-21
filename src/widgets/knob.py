@@ -3,6 +3,8 @@
 import math
 import tkinter as tk
 
+from . import theme
+
 
 _START_ANGLE_DEG = 225.0
 _SWEEP_DEG = 270.0
@@ -48,7 +50,7 @@ class Knob(tk.Frame):
         size=56,
         command=None,
         initial=None,
-        bg="#444444",
+        bg=theme.BG_PANEL,
     ):
         super().__init__(parent, bg=bg)
 
@@ -68,8 +70,8 @@ class Knob(tk.Frame):
         self._name_label = tk.Label(
             self,
             text=label,
-            font=("Arial", 9, "bold"),
-            fg="#AAAAFF",
+            font=theme.FONT_LABEL_BOLD,
+            fg=theme.ACCENT_MUTED,
             bg=bg,
         )
         self._name_label.pack()
@@ -86,8 +88,8 @@ class Knob(tk.Frame):
         self._value_label = tk.Label(
             self,
             text="",
-            font=("Arial", 8),
-            fg="#888888",
+            font=theme.FONT_VALUE,
+            fg=theme.TEXT_SECONDARY,
             bg=bg,
             width=8,
         )
@@ -173,7 +175,7 @@ class Knob(tk.Frame):
             start=_START_ANGLE_DEG + 360.0,
             extent=-_SWEEP_DEG,
             style=tk.ARC,
-            outline="#2a2a2a",
+            outline=theme.BORDER_SUBTLE,
             width=4,
         )
 
@@ -185,7 +187,7 @@ class Knob(tk.Frame):
                 start=-_START_ANGLE_DEG + 360.0 - _SWEEP_DEG,
                 extent=_SWEEP_DEG * -frac,
                 style=tk.ARC,
-                outline="#00AA00",
+                outline=theme.ACCENT,
                 width=4,
             )
 
@@ -193,8 +195,8 @@ class Knob(tk.Frame):
         face_pad = pad + 6
         c.create_oval(
             face_pad, face_pad, s - face_pad, s - face_pad,
-            fill="#444444",
-            outline="#888888",
+            fill=theme.BG_PANEL,
+            outline=theme.BORDER_SUBTLE,
             width=1,
         )
 
@@ -207,7 +209,7 @@ class Knob(tk.Frame):
         y_in = cy - inner_r * math.sin(angle_rad)
         x_out = cx + outer_r * math.cos(angle_rad)
         y_out = cy - outer_r * math.sin(angle_rad)
-        c.create_line(x_in, y_in, x_out, y_out, fill="#FFFFFF", width=2)
+        c.create_line(x_in, y_in, x_out, y_out, fill=theme.TEXT_PRIMARY, width=2)
 
         # Value label.
         if callable(self._format):

@@ -1,6 +1,8 @@
 """Custom vertical slider widget for harmonic amplitude control."""
 import tkinter as tk
 
+from . import theme
+
 
 class HarmonicSlider(tk.Frame):
     """Vertical slider for a single harmonic bin (0.0–1.0).
@@ -10,11 +12,11 @@ class HarmonicSlider(tk.Frame):
 
     TRACK_WIDTH  = 18
     TRACK_HEIGHT = 110
-    FILL_COLOR   = "#00AA00"
-    TRACK_COLOR  = "#2a2a2a"
-    THUMB_COLOR  = "#00DD00"
+    FILL_COLOR   = theme.ACCENT
+    TRACK_COLOR  = theme.BG_INSET
+    THUMB_COLOR  = theme.ACCENT_MUTED
 
-    def __init__(self, parent, *, label="", initial=0.0, command=None, bg="#444444"):
+    def __init__(self, parent, *, label="", initial=0.0, command=None, bg=theme.BG_PANEL):
         super().__init__(parent, bg=bg)
         self._value   = max(0.0, min(1.0, float(initial)))
         self._command = command
@@ -22,8 +24,8 @@ class HarmonicSlider(tk.Frame):
 
         # Index label above
         if label:
-            tk.Label(self, text=label, font=("Arial", 7),
-                     fg="#aaaaaa", bg=bg, width=3).pack()
+            tk.Label(self, text=label, font=theme.FONT_SMALL,
+                     fg=theme.ACCENT_MUTED, bg=bg, width=3).pack()
 
         # Track canvas
         self._canvas = tk.Canvas(
@@ -32,15 +34,15 @@ class HarmonicSlider(tk.Frame):
             height=self.TRACK_HEIGHT,
             bg=bg,
             highlightthickness=1,
-            highlightbackground="#555555",
+            highlightbackground=theme.BORDER_SUBTLE,
             cursor="sb_v_double_arrow",
         )
         self._canvas.pack()
 
         # Percentage label below
         self._pct_label = tk.Label(
-            self, text=self._pct_text(), font=("Arial", 7),
-            fg="#cccccc", bg=bg, width=4,
+            self, text=self._pct_text(), font=theme.FONT_SMALL,
+            fg=theme.TEXT_SECONDARY, bg=bg, width=4,
         )
         self._pct_label.pack()
 
