@@ -51,6 +51,7 @@ class Knob(tk.Frame):
         command=None,
         initial=None,
         bg=theme.BG_PANEL,
+        on_right_click=None,
     ):
         super().__init__(parent, bg=bg)
 
@@ -66,6 +67,13 @@ class Knob(tk.Frame):
         self._drag_y0 = None
         self._drag_v0 = None
         self._drag_delta_px = 0
+
+        # Non-destructive visual override — used by the LFO animator to show
+        # modulated position without changing the stored base value.
+        self._display_override = None
+        # Right-click handler: receives the tkinter event. Used by owner to
+        # pop up a context menu (e.g. for LFO assignment).
+        self.on_right_click = on_right_click
 
         self._name_label = tk.Label(
             self,
@@ -103,6 +111,7 @@ class Knob(tk.Frame):
         self._canvas.bind("<Shift-MouseWheel>", self._on_wheel)
         self._canvas.bind("<Button-4>", self._on_wheel_x11_up)
         self._canvas.bind("<Button-5>", self._on_wheel_x11_down)
+        self._canvas.bind("<Button-3>", self._on_right_click)
 
         self._redraw()
 
@@ -152,12 +161,27 @@ class Knob(tk.Frame):
         return self._clamp(q)
 
     def _fraction(self):
-        """Return current value as 0..1 along the from_->to span."""
+        """Return current (or overridden) value as 0..1 along the from_->to span."""
         span = self._to - self._from
         if span == 0:
             return 0.0
-        f = (self._value - self._from) / span
+        v = self._display_override if self._display_override is not None else self._value
+        f = (v - self._from) / span
         return max(0.0, min(1.0, f))
+
+    def set_display_override(self, value):
+        """Visually show ``value`` without changing stored state or firing command.
+
+        Used to animate the knob while an LFO modulates its target parameter.
+        Call ``clear_display_override`` to restore normal rendering.
+        """
+        self._display_override = float(value)
+        self._redraw()
+
+    def clear_display_override(self):
+        if self._display_override is not None:
+            self._display_override = None
+            self._redraw()
 
     def _redraw(self):
         c = self._canvas
@@ -211,11 +235,12 @@ class Knob(tk.Frame):
         y_out = cy - outer_r * math.sin(angle_rad)
         c.create_line(x_in, y_in, x_out, y_out, fill=theme.TEXT_PRIMARY, width=2)
 
-        # Value label.
+        # Value label — shows override value when modulated, else stored value.
+        v = self._display_override if self._display_override is not None else self._value
         if callable(self._format):
-            text = self._format(self._value)
+            text = self._format(v)
         else:
-            text = self._format.format(self._value)
+            text = self._format.format(v)
         self._value_label.config(text=text)
 
     def _on_press(self, event):
@@ -259,3 +284,7 @@ class Knob(tk.Frame):
     def _on_wheel_x11_down(self, event):
         event.delta = -120
         self._on_wheel(event)
+
+    def _on_right_click(self, event):
+        if self.on_right_click is not None:
+            self.on_right_click(event)

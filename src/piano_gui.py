@@ -39,7 +39,8 @@ class PianoGUI:
                  on_wavetable_change: Callable = None,
                  on_chorus_change: Callable = None,
                  on_bitcrusher_change: Callable = None,
-                 on_panic: Callable = None):
+                 on_panic: Callable = None,
+                 lfo_bank=None):
         """
         Initialize the piano GUI.
         
@@ -61,6 +62,21 @@ class PianoGUI:
         self.on_chorus_change = on_chorus_change or (lambda rate, depth, wet: None)
         self.on_bitcrusher_change = on_bitcrusher_change or (lambda bits, ds, wet: None)
         self.on_panic = on_panic or (lambda: None)
+
+        # LFO modulation bank (optional; no-op routing if absent).
+        from src.lfo import LFOBank  # local import to avoid cycle concerns
+        self.lfo_bank = lfo_bank if lfo_bank is not None else LFOBank()
+        # Assignable knob registry: knob_id -> (Knob widget, change-handler).
+        # Populated by _register_assignable after each assignable knob is created.
+        self._assignable: Dict[str, Tuple[object, Callable]] = {}
+        # Currently selected LFO index shown in the LFO panel (0..2).
+        self._lfo_selected = 0
+        # Per-slot rate/amp knob positions (0..100 on both).
+        self._lfo_slot_state = [
+            {"rate": self._lfo_rate_hz_to_pct(1.0), "amp": 0},
+            {"rate": self._lfo_rate_hz_to_pct(1.0), "amp": 0},
+            {"rate": self._lfo_rate_hz_to_pct(1.0), "amp": 0},
+        ]
 
         # Wavetable state: two editable slots (A, B) and a 32-step morph knob.
         # self.wavetable is the interpolated array actually sent to the engine.
@@ -124,6 +140,7 @@ class PianoGUI:
         row1_inner.pack(anchor='center')
         self._create_adsr_controls(row1_inner)
         self._create_oscillator_controls(row1_inner)
+        self._create_lfo_controls(row1_inner)
 
         # Row 2: Effects (centered)
         row2 = tk.Frame(root, bg=th.BG_ROOT)
@@ -299,6 +316,7 @@ class PianoGUI:
                                  command=self._on_adsr_changed)
         self.attack_scale.set(int(self.attack * 1000))
         self.attack_scale.grid(row=0, column=0, padx=6, pady=4)
+        self._register_assignable('attack', self.attack_scale, self._on_adsr_changed)
 
         self.decay_scale = Knob(knob_row, from_=1, to=500, resolution=1,
                                 label="Decay", value_format="{:.0f} ms",
@@ -306,6 +324,7 @@ class PianoGUI:
                                 command=self._on_adsr_changed)
         self.decay_scale.set(int(self.decay * 1000))
         self.decay_scale.grid(row=0, column=1, padx=6, pady=4)
+        self._register_assignable('decay', self.decay_scale, self._on_adsr_changed)
 
         self.sustain_scale = Knob(knob_row, from_=0, to=100, resolution=1,
                                   label="Sustain", value_format="{:.0f}%",
@@ -313,6 +332,7 @@ class PianoGUI:
                                   command=self._on_adsr_changed)
         self.sustain_scale.set(int(self.sustain * 100))
         self.sustain_scale.grid(row=0, column=2, padx=6, pady=4)
+        self._register_assignable('sustain', self.sustain_scale, self._on_adsr_changed)
 
         self.release_scale = Knob(knob_row, from_=1, to=2000, resolution=1,
                                   label="Release", value_format="{:.0f} ms",
@@ -320,6 +340,7 @@ class PianoGUI:
                                   command=self._on_adsr_changed)
         self.release_scale.set(int(self.release * 1000))
         self.release_scale.grid(row=0, column=3, padx=6, pady=4)
+        self._register_assignable('release', self.release_scale, self._on_adsr_changed)
 
         self.envelope_canvas = Canvas(section, bg=th.BG_INSET, highlightthickness=1,
                                       highlightbackground=th.BORDER_SUBTLE,
@@ -369,16 +390,98 @@ class PianoGUI:
 
     def _on_adsr_changed(self, value):
         """Handle ADSR slider changes."""
-        self.attack = self.attack_scale.get() / 1000.0
-        self.decay = self.decay_scale.get() / 1000.0
-        self.sustain = self.sustain_scale.get() / 100.0
-        self.release = self.release_scale.get() / 1000.0
+        self.attack  = self._eff(self.attack_scale,  'attack')  / 1000.0
+        self.decay   = self._eff(self.decay_scale,   'decay')   / 1000.0
+        self.sustain = self._eff(self.sustain_scale, 'sustain') / 100.0
+        self.release = self._eff(self.release_scale, 'release') / 1000.0
 
         # Notify synthesizer
         self.on_adsr_change(self.attack, self.decay, self.sustain, self.release)
 
         # Redraw envelope
         self._draw_envelope()
+
+    def _create_lfo_controls(self, parent):
+        """LFO panel: dropdown selecting 1 of 3 LFOs, with rate + amount knobs."""
+        section = tk.Frame(parent, bg=th.BG_PANEL,
+                           highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
+
+        tk.Label(section, text="LFO", font=th.FONT_SECTION,
+                 fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
+
+        # Dropdown — OptionMenu (ttk.Combobox would look nicer but needs ttk styling).
+        select_row = tk.Frame(section, bg=th.BG_PANEL)
+        select_row.pack(padx=10, pady=(0, 4))
+        self._lfo_select_var = tk.StringVar(value="LFO 1")
+        opts = ["LFO 1", "LFO 2", "LFO 3"]
+        om = tk.OptionMenu(select_row, self._lfo_select_var, *opts,
+                           command=lambda _: self._on_lfo_select())
+        om.config(bg=th.BG_INSET, fg=th.TEXT_PRIMARY,
+                  activebackground=th.ACCENT, activeforeground=th.TEXT_PRIMARY,
+                  highlightthickness=0, bd=0, font=th.FONT_LABEL_BOLD)
+        om["menu"].config(bg=th.BG_PANEL, fg=th.TEXT_PRIMARY,
+                          activebackground=th.ACCENT,
+                          activeforeground=th.TEXT_PRIMARY)
+        om.pack()
+
+        knob_row = tk.Frame(section, bg=th.BG_PANEL)
+        knob_row.pack(padx=10, pady=(2, 10))
+
+        def _rate_fmt(v):
+            hz = self._lfo_pct_to_hz(v)
+            return f"{hz:.2f} Hz" if hz < 10 else f"{hz:.1f} Hz"
+
+        initial = self._lfo_slot_state[0]
+        self.lfo_rate_knob = Knob(
+            knob_row, from_=0, to=100, resolution=1,
+            label="Rate", value_format=_rate_fmt,
+            initial=initial["rate"],
+            command=self._on_lfo_params_changed,
+        )
+        self.lfo_rate_knob.set(initial["rate"])
+        self.lfo_rate_knob.grid(row=0, column=0, padx=6, pady=4)
+
+        self.lfo_amp_knob = Knob(
+            knob_row, from_=0, to=100, resolution=1,
+            label="Amount", value_format="{:.0f}%",
+            initial=initial["amp"],
+            command=self._on_lfo_params_changed,
+        )
+        self.lfo_amp_knob.set(initial["amp"])
+        self.lfo_amp_knob.grid(row=0, column=1, padx=6, pady=4)
+
+        # LFO knobs are NOT right-clickable (intentionally).
+        # They are not registered in self._assignable.
+
+        # Push initial values to the bank.
+        self._on_lfo_params_changed(None)
+
+    def _on_lfo_select(self):
+        """Dropdown changed: save current knob values to the old slot, load new."""
+        new_idx = ["LFO 1", "LFO 2", "LFO 3"].index(self._lfo_select_var.get())
+        # Save current knob positions to the slot we're leaving.
+        self._lfo_slot_state[self._lfo_selected] = {
+            "rate": float(self.lfo_rate_knob.get()),
+            "amp":  float(self.lfo_amp_knob.get()),
+        }
+        self._lfo_selected = new_idx
+        nxt = self._lfo_slot_state[new_idx]
+        # Load new slot into the knobs (fires _on_lfo_params_changed via command).
+        self.lfo_rate_knob.set(nxt["rate"])
+        self.lfo_amp_knob.set(nxt["amp"])
+
+    def _on_lfo_params_changed(self, _):
+        """Rate / Amount knob changed: write to the currently-selected LFO."""
+        idx = self._lfo_selected
+        rate_hz = self._lfo_pct_to_hz(float(self.lfo_rate_knob.get()))
+        amp = float(self.lfo_amp_knob.get()) / 100.0
+        self.lfo_bank.lfos[idx].rate_hz = rate_hz
+        self.lfo_bank.lfos[idx].amplitude = amp
+        self._lfo_slot_state[idx] = {
+            "rate": float(self.lfo_rate_knob.get()),
+            "amp":  float(self.lfo_amp_knob.get()),
+        }
 
     def _create_filter_controls(self, parent):
         """Low-pass filter section: Cutoff + Q as knobs."""
@@ -402,6 +505,7 @@ class PianoGUI:
                                      command=self._on_lpf_changed)
         self.lpf_cutoff_scale.set(100)
         self.lpf_cutoff_scale.grid(row=0, column=0, padx=6, pady=4)
+        self._register_assignable('lpf_cutoff', self.lpf_cutoff_scale, self._on_lpf_changed)
 
         self.lpf_q_scale = Knob(knob_row, from_=0.5, to=12.0, resolution=0.1,
                                 label="Reso", value_format="Q {:.1f}",
@@ -409,6 +513,7 @@ class PianoGUI:
                                 command=self._on_lpf_changed)
         self.lpf_q_scale.set(0.7)
         self.lpf_q_scale.grid(row=1, column=0, padx=6, pady=4)
+        self._register_assignable('lpf_q', self.lpf_q_scale, self._on_lpf_changed)
 
     def _create_effects_controls(self, parent):
         """Effects section: Reverb, Delay, Chorus, and Bitcrusher sub-groups."""
@@ -435,10 +540,10 @@ class PianoGUI:
 
         # ── Reverb ────────────────────────────────────────────────────────
         rev = _subgroup(groups_row, "Reverb")
-        for col, (lbl, attr, default) in enumerate([
-            ("Room", "reverb_room_scale", 50),
-            ("Damp", "reverb_damp_scale", 50),
-            ("Wet",  "reverb_wet_scale",   0),
+        for col, (lbl, attr, kid, default) in enumerate([
+            ("Room", "reverb_room_scale", "reverb_room", 50),
+            ("Damp", "reverb_damp_scale", "reverb_damp", 50),
+            ("Wet",  "reverb_wet_scale",  "reverb_wet",   0),
         ]):
             k = Knob(rev, from_=0, to=100, resolution=1,
                      label=lbl, value_format="{:.0f}%",
@@ -447,6 +552,7 @@ class PianoGUI:
             k.set(default)
             k.grid(row=0, column=col, padx=5, pady=4)
             setattr(self, attr, k)
+            self._register_assignable(kid, k, self._on_reverb_changed)
 
         # ── Delay ─────────────────────────────────────────────────────────
         dly = _subgroup(groups_row, "Delay")
@@ -474,6 +580,7 @@ class PianoGUI:
                                    command=self._on_delay_changed)
         self.delay_fb_scale.set(40)
         self.delay_fb_scale.grid(row=0, column=1, padx=5, pady=4)
+        self._register_assignable('delay_fb', self.delay_fb_scale, self._on_delay_changed)
 
         self.delay_wet_scale = Knob(dly, from_=0, to=100, resolution=1,
                                     label="Wet", value_format="{:.0f}%",
@@ -481,6 +588,7 @@ class PianoGUI:
                                     command=self._on_delay_changed)
         self.delay_wet_scale.set(0)
         self.delay_wet_scale.grid(row=0, column=2, padx=5, pady=4)
+        self._register_assignable('delay_wet', self.delay_wet_scale, self._on_delay_changed)
 
         # ── Chorus ────────────────────────────────────────────────────────
         cho = _subgroup(groups_row, "Chorus")
@@ -491,6 +599,7 @@ class PianoGUI:
                                       command=self._on_chorus_changed)
         self.chorus_rate_scale.set(30)
         self.chorus_rate_scale.grid(row=0, column=0, padx=5, pady=4)
+        self._register_assignable('chorus_rate', self.chorus_rate_scale, self._on_chorus_changed)
 
         self.chorus_depth_scale = Knob(cho, from_=0, to=100, resolution=1,
                                        label="Depth", value_format="{:.0f}%",
@@ -498,6 +607,7 @@ class PianoGUI:
                                        command=self._on_chorus_changed)
         self.chorus_depth_scale.set(50)
         self.chorus_depth_scale.grid(row=0, column=1, padx=5, pady=4)
+        self._register_assignable('chorus_depth', self.chorus_depth_scale, self._on_chorus_changed)
 
         self.chorus_wet_scale = Knob(cho, from_=0, to=100, resolution=1,
                                      label="Wet", value_format="{:.0f}%",
@@ -505,6 +615,7 @@ class PianoGUI:
                                      command=self._on_chorus_changed)
         self.chorus_wet_scale.set(0)
         self.chorus_wet_scale.grid(row=0, column=2, padx=5, pady=4)
+        self._register_assignable('chorus_wet', self.chorus_wet_scale, self._on_chorus_changed)
 
         # ── Bitcrusher ────────────────────────────────────────────────────
         bc = _subgroup(groups_row, "Bitcrusher")
@@ -515,6 +626,7 @@ class PianoGUI:
                                   command=self._on_bitcrusher_changed)
         self.bc_bits_scale.set(16)
         self.bc_bits_scale.grid(row=0, column=0, padx=5, pady=4)
+        self._register_assignable('bc_bits', self.bc_bits_scale, self._on_bitcrusher_changed)
 
         self.bc_ds_scale = Knob(bc, from_=1, to=32, resolution=1,
                                 label="Downsamp", value_format="÷{:.0f}",
@@ -522,6 +634,7 @@ class PianoGUI:
                                 command=self._on_bitcrusher_changed)
         self.bc_ds_scale.set(1)
         self.bc_ds_scale.grid(row=0, column=1, padx=5, pady=4)
+        self._register_assignable('bc_ds', self.bc_ds_scale, self._on_bitcrusher_changed)
 
         self.bc_wet_scale = Knob(bc, from_=0, to=100, resolution=1,
                                  label="Wet", value_format="{:.0f}%",
@@ -529,6 +642,7 @@ class PianoGUI:
                                  command=self._on_bitcrusher_changed)
         self.bc_wet_scale.set(0)
         self.bc_wet_scale.grid(row=0, column=2, padx=5, pady=4)
+        self._register_assignable('bc_wet', self.bc_wet_scale, self._on_bitcrusher_changed)
 
     def _create_master_section(self, parent):
         """Master section: Volume knob + compact vertical level meter."""
@@ -552,6 +666,7 @@ class PianoGUI:
                                  command=self._on_volume_changed)
         self.volume_scale.set(70)
         self.volume_scale.pack(pady=(0, 4))
+        self._register_assignable('volume', self.volume_scale, self._on_volume_changed)
         self._on_volume_changed(None)
 
         self.gain_canvas = Canvas(section, bg=th.BG_INSET, highlightthickness=1,
@@ -605,43 +720,133 @@ class PianoGUI:
         self.mouse_down_note = None
         self._kb_held.clear()
 
+    # ── LFO routing helpers ──────────────────────────────────────────────
+
+    # Rate taper: 0..100 on the knob -> 0.05..20 Hz on the LFO.
+    _LFO_RATE_MIN_HZ = 0.05
+    _LFO_RATE_MAX_HZ = 20.0
+
+    @classmethod
+    def _lfo_pct_to_hz(cls, pct: float) -> float:
+        t = max(0.0, min(1.0, pct / 100.0))
+        ratio = cls._LFO_RATE_MAX_HZ / cls._LFO_RATE_MIN_HZ
+        return cls._LFO_RATE_MIN_HZ * (ratio ** t)
+
+    @classmethod
+    def _lfo_rate_hz_to_pct(cls, hz: float) -> float:
+        import math as _m
+        hz = max(cls._LFO_RATE_MIN_HZ, min(cls._LFO_RATE_MAX_HZ, hz))
+        ratio = cls._LFO_RATE_MAX_HZ / cls._LFO_RATE_MIN_HZ
+        return 100.0 * _m.log(hz / cls._LFO_RATE_MIN_HZ) / _m.log(ratio)
+
+    def _register_assignable(self, knob_id: str, knob, handler: Callable):
+        """Register a knob as an LFO-modulation target (right-click menu + visual animation)."""
+        self._assignable[knob_id] = (knob, handler)
+        knob.on_right_click = lambda event, kid=knob_id: self._show_lfo_menu(kid, event)
+
+    def _eff(self, knob, knob_id: str) -> float:
+        """Return knob's raw value with any LFO offset applied and clamped."""
+        raw = float(knob.get())
+        return self.lfo_bank.effective_value(knob_id, raw, float(knob._from), float(knob._to))
+
+    def _show_lfo_menu(self, knob_id: str, event):
+        menu = tk.Menu(self.root, tearoff=0,
+                       bg=th.BG_PANEL, fg=th.TEXT_PRIMARY,
+                       activebackground=th.ACCENT, activeforeground=th.TEXT_PRIMARY)
+        current = self.lfo_bank.route_of(knob_id)
+        for i in range(self.lfo_bank.NUM_LFOS):
+            label = f"Assign to LFO {i + 1}"
+            if current == i:
+                label = f"✓ {label}"
+            menu.add_command(label=label,
+                             command=lambda idx=i: self._assign_lfo(knob_id, idx))
+        if current is not None:
+            menu.add_separator()
+            menu.add_command(label="Remove LFO",
+                             command=lambda: self._unassign_lfo(knob_id))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _assign_lfo(self, knob_id: str, lfo_index: int):
+        self.lfo_bank.assign(knob_id, lfo_index)
+
+    def _unassign_lfo(self, knob_id: str):
+        self.lfo_bank.unassign(knob_id)
+        entry = self._assignable.get(knob_id)
+        if entry is None:
+            return
+        knob, handler = entry
+        knob.clear_display_override()
+        try:
+            handler(None)
+        except Exception as e:
+            print(f"LFO unassign handler error: {type(e).__name__}: {e}")
+
+    def update_lfo_visuals(self):
+        """GUI-poll hook: re-apply modulated params, animate modulated knobs."""
+        handlers = set()
+        for knob_id in list(self.lfo_bank.routes.keys()):
+            entry = self._assignable.get(knob_id)
+            if entry is not None:
+                handlers.add(entry[1])
+        for h in handlers:
+            try:
+                h(None)
+            except Exception as e:
+                print(f"LFO handler error: {type(e).__name__}: {e}")
+
+        routes = self.lfo_bank.routes
+        for knob_id, (knob, _h) in self._assignable.items():
+            try:
+                if knob_id in routes:
+                    eff = self.lfo_bank.effective_value(
+                        knob_id, float(knob.get()),
+                        float(knob._from), float(knob._to))
+                    knob.set_display_override(eff)
+                else:
+                    knob.clear_display_override()
+            except Exception:
+                pass
+
     def _on_volume_changed(self, _):
-        self.on_volume_change(self.volume_scale.get() / 100.0 * (3.0 / 7.0))
+        self.on_volume_change(self._eff(self.volume_scale, 'volume') / 100.0 * (3.0 / 7.0))
 
     def _on_lpf_changed(self, _):
-        t = self.lpf_cutoff_scale.get() / 100.0
+        t = self._eff(self.lpf_cutoff_scale, 'lpf_cutoff') / 100.0
         cutoff = 20.0 * (1000.0 ** t)  # log mapping: 20 Hz → 20000 Hz
-        q = self.lpf_q_scale.get()
+        q = self._eff(self.lpf_q_scale, 'lpf_q')
         self.on_lpf_change(cutoff, q)
 
     def _on_reverb_changed(self, _):
         self.on_reverb_change(
-            self.reverb_room_scale.get() / 100.0,
-            self.reverb_damp_scale.get() / 100.0,
-            self.reverb_wet_scale.get()  / 100.0,
+            self._eff(self.reverb_room_scale, 'reverb_room') / 100.0,
+            self._eff(self.reverb_damp_scale, 'reverb_damp') / 100.0,
+            self._eff(self.reverb_wet_scale,  'reverb_wet')  / 100.0,
         )
 
     def _on_delay_changed(self, _):
         self.on_delay_change(
             float(self.delay_time_scale.get()),
-            self.delay_fb_scale.get()  / 100.0,
-            self.delay_wet_scale.get() / 100.0,
+            self._eff(self.delay_fb_scale,  'delay_fb')  / 100.0,
+            self._eff(self.delay_wet_scale, 'delay_wet') / 100.0,
         )
 
     def _on_chorus_changed(self, _):
         # Rate knob: 0–100% → 0.05–8 Hz (log-ish feel)
-        rate_hz = 0.05 * (160.0 ** (self.chorus_rate_scale.get() / 100.0))
+        rate_hz = 0.05 * (160.0 ** (self._eff(self.chorus_rate_scale, 'chorus_rate') / 100.0))
         self.on_chorus_change(
             rate_hz,
-            self.chorus_depth_scale.get() / 100.0,
-            self.chorus_wet_scale.get()   / 100.0,
+            self._eff(self.chorus_depth_scale, 'chorus_depth') / 100.0,
+            self._eff(self.chorus_wet_scale,   'chorus_wet')   / 100.0,
         )
 
     def _on_bitcrusher_changed(self, _):
         self.on_bitcrusher_change(
-            float(self.bc_bits_scale.get()),
-            int(self.bc_ds_scale.get()),
-            self.bc_wet_scale.get() / 100.0,
+            float(self._eff(self.bc_bits_scale, 'bc_bits')),
+            int(self._eff(self.bc_ds_scale,    'bc_ds')),
+            self._eff(self.bc_wet_scale, 'bc_wet') / 100.0,
         )
 
     # Harmonic amplitudes for each preset (16 bins, index 0 = fundamental)
@@ -726,7 +931,8 @@ class PianoGUI:
                 lbl.config(bg=th.BG_INSET, fg=th.TEXT_SECONDARY)
 
     def _on_morph_changed(self, value):
-        self._morph_pos = int(value)
+        # Use _eff so LFO modulation reaches the morph parameter.
+        self._morph_pos = int(round(self._eff(self.morph_knob, 'morph')))
         self._recompute_current_wt()
 
     def _create_oscillator_controls(self, parent):
@@ -794,6 +1000,7 @@ class PianoGUI:
             bg=th.BG_PANEL,
         )
         self.morph_knob.pack(side=tk.LEFT, padx=(10, 0))
+        self._register_assignable('morph', self.morph_knob, self._on_morph_changed)
 
         slider_row = tk.Frame(section, bg=th.BG_PANEL)
         slider_row.pack(padx=10, pady=(0, 10))

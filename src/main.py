@@ -68,6 +68,7 @@ def main():
             on_chorus_change=lambda rate, depth, wet: synth.set_chorus(rate, depth, wet),
             on_bitcrusher_change=lambda bits, ds, wet: synth.set_bitcrusher(bits, ds, wet),
             on_panic=synth.panic,
+            lfo_bank=synth.lfo_bank,
         )
 
         # Re-wire MIDI callbacks through the GUI so keys highlight on MIDI input
@@ -79,6 +80,7 @@ def main():
                 try:
                     piano.update_voice_count(len(synth.active_voices))
                     piano.update_gain_meter(level_info['current'], level_info['peak'], level_info['clipping'])
+                    piano.update_lfo_visuals()
                     root.update()
                 except:
                     break

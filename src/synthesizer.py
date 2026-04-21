@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from src.voice import Voice
 from src.midi_handler import MIDIHandler
 from src.effects import MasterVolume, LowPassFilter, Reverb, Delay, Chorus, Bitcrusher
+from src.lfo import LFOBank
 
 
 class Synthesizer:
@@ -83,6 +84,11 @@ class Synthesizer:
         self._delay  = Delay(sample_rate, wet=0.0)
         self._chorus = Chorus(sample_rate, wet=0.0)
         self._bitcrusher = Bitcrusher(bits=16.0, downsample=1, wet=0.0)
+
+        # LFO modulation bank — phase advanced once per audio block.
+        # GUI polls ``lfo_bank.offsets`` on its own thread to re-apply
+        # modulated parameter values (tkinter is not audio-thread safe).
+        self.lfo_bank = LFOBank()
 
     @staticmethod
     def note_to_frequency(note: int) -> float:
@@ -265,8 +271,13 @@ class Synthesizer:
         Returns:
             Mixed audio samples (mono)
         """
+        # Advance LFO phases once per block. GUI thread polls the resulting
+        # offsets at ~20 Hz to re-apply modulated parameters via the normal
+        # setter callbacks (tkinter is not audio-thread safe).
+        self.lfo_bank.tick(num_samples, self.sample_rate)
+
         output = np.zeros(num_samples, dtype=np.float32)
-        
+
         # Generate and mix samples from all active voices
         notes_to_remove = []
         
