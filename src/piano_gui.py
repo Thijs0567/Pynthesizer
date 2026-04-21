@@ -62,9 +62,15 @@ class PianoGUI:
         self.on_bitcrusher_change = on_bitcrusher_change or (lambda bits, ds, wet: None)
         self.on_panic = on_panic or (lambda: None)
 
-        # Wavetable state (16 harmonic amplitudes)
-        self.wavetable = np.zeros(16, dtype=np.float32)
-        self.wavetable[0] = 1.0
+        # Wavetable state: two editable slots (A, B) and a 32-step morph knob.
+        # self.wavetable is the interpolated array actually sent to the engine.
+        self._wt_a = np.zeros(16, dtype=np.float32)
+        self._wt_a[0] = 1.0
+        self._wt_b = self._make_preset_waveform('saw')
+        self._edit_slot = 'A'
+        self._morph_pos = 0
+        self._suppress_harmonic_callback = False
+        self.wavetable = self._wt_a.copy()
 
         # Active keys (pressed)
         self.active_keys: Dict[int, int] = {}  # note -> key_id
@@ -680,11 +686,48 @@ class PianoGUI:
 
     def _apply_preset(self, name: str):
         wt = self._make_preset_waveform(name)
-        self.wavetable = wt.copy()
-        for k, slider in enumerate(self.harmonic_sliders):
-            slider.set(float(wt[k]))
+        if self._edit_slot == 'A':
+            self._wt_a = wt.copy()
+        else:
+            self._wt_b = wt.copy()
+        self._refresh_sliders_from_slot()
+        self._recompute_current_wt()
+
+    def _refresh_sliders_from_slot(self):
+        """Sync slider positions to the currently selected slot's harmonics."""
+        wt = self._wt_a if self._edit_slot == 'A' else self._wt_b
+        self._suppress_harmonic_callback = True
+        try:
+            for k, slider in enumerate(self.harmonic_sliders):
+                slider.set(float(wt[k]))
+        finally:
+            self._suppress_harmonic_callback = False
+
+    def _recompute_current_wt(self):
+        """Compute the interpolated wavetable from A, B, and morph position; push to engine."""
+        t = self._morph_pos / 31.0
+        self.wavetable = ((1.0 - t) * self._wt_a + t * self._wt_b).astype(np.float32)
         self._draw_waveform()
         self.on_wavetable_change(self.wavetable.copy())
+
+    def _on_slot_changed(self, name: str):
+        if name == self._edit_slot:
+            return
+        self._edit_slot = name
+        self._refresh_sliders_from_slot()
+        self._update_slot_button_styles()
+        self._draw_waveform()
+
+    def _update_slot_button_styles(self):
+        for name, lbl in self._ab_buttons.items():
+            if name == self._edit_slot:
+                lbl.config(bg=th.ACCENT, fg=th.TEXT_PRIMARY)
+            else:
+                lbl.config(bg=th.BG_INSET, fg=th.TEXT_SECONDARY)
+
+    def _on_morph_changed(self, value):
+        self._morph_pos = int(value)
+        self._recompute_current_wt()
 
     def _create_oscillator_controls(self, parent):
         """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
@@ -715,11 +758,42 @@ class PianoGUI:
             btn_frame.bind('<Button-1>', lambda _, n=name: self._apply_preset(n))
             self._preset_btn_canvases[name] = c
 
+        graph_row = tk.Frame(section, bg=th.BG_PANEL)
+        graph_row.pack(padx=10, pady=(4, 6), fill=tk.X)
+
         self.waveform_canvas = tk.Canvas(
-            section, bg=th.BG_INSET, highlightthickness=1,
+            graph_row, bg=th.BG_INSET, highlightthickness=1,
             highlightbackground=th.BORDER_SUBTLE, width=320, height=80,
         )
-        self.waveform_canvas.pack(padx=10, pady=(4, 6))
+        self.waveform_canvas.pack(side=tk.LEFT)
+
+        # A/B slot-select buttons placed inside the bottom-left of the canvas.
+        self._ab_buttons = {}
+        for i, name in enumerate(('A', 'B')):
+            lbl = tk.Label(
+                self.waveform_canvas,
+                text=name, font=th.FONT_LABEL_BOLD,
+                fg=th.TEXT_SECONDARY, bg=th.BG_INSET,
+                width=2, padx=4, pady=0, cursor='hand2',
+                highlightthickness=1, highlightbackground=th.BORDER_SUBTLE,
+            )
+            lbl.place(in_=self.waveform_canvas, x=6 + i * 32, rely=1.0, y=-6, anchor='sw')
+            lbl.bind('<Button-1>', lambda _, n=name: self._on_slot_changed(n))
+            self._ab_buttons[name] = lbl
+        self._update_slot_button_styles()
+
+        # Morph knob to the right of the graph (discrete 0..31 positions between A and B).
+        self.morph_knob = Knob(
+            graph_row,
+            from_=0, to=31, resolution=1,
+            label="Morph",
+            value_format="{:.0f}",
+            size=56,
+            initial=0,
+            command=self._on_morph_changed,
+            bg=th.BG_PANEL,
+        )
+        self.morph_knob.pack(side=tk.LEFT, padx=(10, 0))
 
         slider_row = tk.Frame(section, bg=th.BG_PANEL)
         slider_row.pack(padx=10, pady=(0, 10))
@@ -727,7 +801,7 @@ class PianoGUI:
         self.harmonic_sliders = []
         for k in range(16):
             label = "F" if k == 0 else str(k + 1)
-            initial = 1.0 if k == 0 else 0.0
+            initial = float(self._wt_a[k])
             slider = HarmonicSlider(
                 slider_row,
                 label=label,
@@ -740,13 +814,26 @@ class PianoGUI:
 
         self.waveform_canvas.bind('<Configure>', lambda _: self._draw_waveform())
 
+        # Fire initial callback so the engine receives the computed wavetable (sine at pos 0).
+        self._recompute_current_wt()
+
     def _on_harmonic_changed(self, index: int, value: float):
-        self.wavetable[index] = float(value)
-        self._draw_waveform()
-        self.on_wavetable_change(self.wavetable.copy())
+        if self._suppress_harmonic_callback:
+            return
+        wt = self._wt_a if self._edit_slot == 'A' else self._wt_b
+        wt[index] = float(value)
+        self._recompute_current_wt()
+
+    def _harmonics_to_wave(self, wt: np.ndarray, N: int = 200) -> np.ndarray:
+        phases = np.linspace(0, 2 * np.pi, N, endpoint=False)
+        wave = np.zeros(N, dtype=np.float64)
+        for k in range(16):
+            if wt[k] != 0.0:
+                wave += wt[k] * np.sin((k + 1) * phases)
+        return wave
 
     def _draw_waveform(self):
-        """Draw one cycle of the current wavetable waveform on the preview canvas."""
+        """Draw A, B, and the current interpolated waveform overlaid on the preview canvas."""
         c = self.waveform_canvas
         c.delete('all')
         w = c.winfo_width() or 320
@@ -759,23 +846,36 @@ class PianoGUI:
         c.create_line(mx, mid_y, w - mx, mid_y, fill=th.BORDER_SUBTLE, width=1)
 
         N = 200
-        phases = np.linspace(0, 2 * np.pi, N, endpoint=False)
-        wt = self.wavetable
-        wave = np.zeros(N, dtype=np.float64)
-        for k in range(16):
-            if wt[k] != 0.0:
-                wave += wt[k] * np.sin((k + 1) * phases)
+        wave_a   = self._harmonics_to_wave(self._wt_a, N)
+        wave_b   = self._harmonics_to_wave(self._wt_b, N)
+        wave_cur = self._harmonics_to_wave(self.wavetable, N)
 
-        peak = max(float(np.max(np.abs(wave))), 1.0)
-        wave /= peak
+        peak = max(
+            float(np.max(np.abs(wave_a))),
+            float(np.max(np.abs(wave_b))),
+            float(np.max(np.abs(wave_cur))),
+            1.0,
+        )
+        wave_a   /= peak
+        wave_b   /= peak
+        wave_cur /= peak
 
         xs = mx + np.arange(N) * draw_w / (N - 1)
-        ys = mid_y - wave * (draw_h / 2 - 2)
-        coords = []
-        for x, y in zip(xs, ys):
-            coords.extend([float(x), float(y)])
-        if len(coords) >= 4:
-            c.create_line(coords, fill=th.ACCENT, width=2, smooth=False)
+
+        def _coords(wave):
+            ys = mid_y - wave * (draw_h / 2 - 2)
+            out = []
+            for x, y in zip(xs, ys):
+                out.extend([float(x), float(y)])
+            return out
+
+        c.create_line(_coords(wave_a),   fill=th.BORDER_SUBTLE, width=1, smooth=False)
+        c.create_line(_coords(wave_b),   fill=th.ACCENT_MUTED,  width=1, smooth=False)
+        c.create_line(_coords(wave_cur), fill=th.ACCENT,        width=2, smooth=False)
+
+        # Keep the A/B buttons above the newly drawn lines.
+        for lbl in getattr(self, '_ab_buttons', {}).values():
+            lbl.lift()
 
     def _draw_envelope(self):
         """Draw ADSR envelope visualization."""
