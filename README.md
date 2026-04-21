@@ -35,10 +35,24 @@ MIDI input is opened automatically if a device is connected. The GUI always laun
 
 ## Oscillator
 
-- **16-harmonic additive wavetable** with individual amplitude sliders and a live waveform preview
-- **Waveform presets** — click a button to load a classic shape:
+- **Dual wavetable slots (A / B)**: each slot has 16 independent harmonic amplitude sliders and a live waveform preview
+- **Morph knob**: continuously interpolates between slot A and slot B (32 steps); LFO-assignable
+- **Edit slot toggle**: switch which slot (A or B) the harmonic sliders currently edit
+- **Waveform presets** — click a button to load a classic shape into the active slot:
   - Sine, Saw, Square, Triangle, Semisine
   - Each button shows the actual waveform shape as its icon
+
+## LFO Modulation
+
+- **3 independent LFOs** (sine wave), each with rate (0.05–8 Hz) and amplitude knobs
+- **Per-knob LFO routing**: right-click any assignable knob to assign it to one of the 3 LFOs
+- **Assignable targets**: ADSR knobs, LPF cutoff/Q, reverb/delay/chorus/bitcrusher knobs, wavetable morph
+- LFO panel selects which LFO to configure via a dropdown; each LFO retains its settings independently
+
+## Presets
+
+- **Save / Load**: full synth state (ADSR, effects, wavetable A/B, morph, LFO routing) stored as JSON in `presets/`
+- **Preset browser**: scan and load any `.json` preset from the `presets/` folder directly from the GUI
 
 ## What It Does
 
@@ -52,12 +66,12 @@ Each note plays through the wavetable oscillator with:
 - **Compressor + Limiter**:
   - RMS compressor with soft knee
   - Peak limiter prevents clipping while preserving dynamics
-- **Effects Chain** (stereo output):
-  - **Low-Pass Filter**: Variable cutoff and Q (resonance)
-  - **Delay**: Configurable time, feedback, and wet/dry mix
+- **Effects Chain** (stereo output, in signal order):
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
-  - **Chorus**: Stereo LFO-modulated delay (L/R phases offset by 180°); rate 0.05–8 Hz, depth, and wet/dry mix
+  - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Bitcrusher**: Bit-depth reduction (1–24 bits) + sample-rate reduction via sample-and-hold downsampling (factor 1–32); wet/dry mix
+  - **Low-Pass Filter**: Variable cutoff and Q (resonance)
+  - **Chorus**: Stereo LFO-modulated delay (L/R phases offset by 180°); rate 0.05–8 Hz, depth, and wet/dry mix (mono → stereo)
 - **Master Volume**: knob range mapped to 0–43% linear; defaults to 70% knob (0.3 linear) for comfortable headroom
 
 ## Architecture
@@ -68,25 +82,27 @@ MIDI / GUI click / QWERTY keyboard
     → Voice Pool (wavetable oscillator + ADSR per note)
     → Voice Mixer (sum active voices, √N envelope scaling)
     → Compressor (RMS stage + peak limiter)
-    → Effects Chain (LPF → Reverb → Delay)
+    → Effects Chain (Reverb → Delay → Bitcrusher → LPF → Chorus)
     → Master Volume
-    → Chorus (mono → stereo)
-    → Bitcrusher
     → Audio Engine (stereo) → Speakers
+
+LFO Bank (3 × sine LFO) → knob routing → modulates assignable parameters each block
 ```
 
 **Real-time Design**: Audio synthesis runs in callback (zero allocations). MIDI polling runs in a separate thread. GUI updates at 20 Hz in a daemon thread.
 
 ## Modules
 
-- `main.py` - Entry point: GUI piano with optional MIDI input
-- `piano_gui.py` - Tkinter piano interface with all controls
-- `synthesizer.py` - Core synthesis engine & dynamics processor
-- `voice.py` - Individual wavetable oscillator + ADSR
-- `effects.py` - Effect chain (LPF, Reverb, Delay)
-- `midi_handler.py` - MIDI input handling
-- `audio_engine.py` - Real-time audio output
-- `widgets/` - Knob and HarmonicSlider custom widgets
+- `main.py` — Entry point: GUI piano with optional MIDI input
+- `piano_gui.py` — Tkinter piano interface with all controls
+- `synthesizer.py` — Core synthesis engine & dynamics processor
+- `voice.py` — Individual wavetable oscillator + ADSR
+- `effects.py` — Effect chain (LPF, Reverb, Delay, Chorus, Bitcrusher)
+- `lfo.py` — LFO bank (3 sine LFOs) with knob routing registry
+- `presets.py` — Preset capture, apply, save (JSON), and folder scan
+- `midi_handler.py` — MIDI input handling
+- `audio_engine.py` — Real-time audio output
+- `widgets/` — Knob and HarmonicSlider custom widgets
 
 ## Configuration & API
 
