@@ -791,11 +791,17 @@ class PianoGUI:
             entry = self._assignable.get(knob_id)
             if entry is not None:
                 handlers.add(entry[1])
-        for h in handlers:
-            try:
-                h(None)
-            except Exception as e:
-                print(f"LFO handler error: {type(e).__name__}: {e}")
+        # Runs on the background update_gui thread. Handlers must suppress
+        # tk canvas work here — concurrent draws with the main loop crash tk.
+        self._lfo_polling = True
+        try:
+            for h in handlers:
+                try:
+                    h(None)
+                except Exception as e:
+                    print(f"LFO handler error: {type(e).__name__}: {e}")
+        finally:
+            self._lfo_polling = False
 
         routes = self.lfo_bank.routes
         for knob_id, (knob, _h) in self._assignable.items():
@@ -912,7 +918,15 @@ class PianoGUI:
         """Compute the interpolated wavetable from A, B, and morph position; push to engine."""
         t = self._morph_pos / 31.0
         self.wavetable = ((1.0 - t) * self._wt_a + t * self._wt_b).astype(np.float32)
-        self._draw_waveform()
+        # From the LFO poller thread, defer the redraw onto the tk main thread
+        # — concurrent canvas ops with mainloop crash the app.
+        if getattr(self, '_lfo_polling', False):
+            try:
+                self.waveform_canvas.after(0, self._draw_waveform)
+            except Exception:
+                pass
+        else:
+            self._draw_waveform()
         self.on_wavetable_change(self.wavetable.copy())
 
     def _on_slot_changed(self, name: str):
