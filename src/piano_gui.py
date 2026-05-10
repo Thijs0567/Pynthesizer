@@ -1202,7 +1202,7 @@ class PianoGUI:
                                        bg=th.BG_PANEL)
         self.unison_voices_knob.pack(pady=(0, 4))
 
-        self.unison_detune_knob = Knob(unison_col, from_=0, to=50, resolution=0.5,
+        self.unison_detune_knob = Knob(unison_col, from_=0, to=100, resolution=0.5,
                                        label="Detune", value_format="{:.1f} ct",
                                        size=56, initial=0,
                                        command=self._on_unison_changed,

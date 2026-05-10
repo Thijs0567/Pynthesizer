@@ -6,7 +6,7 @@
     "decay": 176,
     "sustain": 70,
     "release": 129,
-    "morph": 14,
+    "morph": 13,
     "lpf_cutoff": 70,
     "lpf_q": 2.5,
     "volume": 70,
@@ -26,7 +26,7 @@
   },
   "scales": {
     "delay_time": 260,
-    "transpose": -2
+    "transpose": 0
   },
   "wavetable": {
     "a": [
@@ -66,7 +66,7 @@
       0.0625
     ],
     "edit_slot": "B",
-    "morph": 13
+    "morph": 14
   },
   "lfo": {
     "selected": 1,
@@ -92,6 +92,10 @@
   "mono": {
     "enabled": true,
     "legato": 4
+  },
+  "unison": {
+    "voices": 5,
+    "detune": 60.5
   },
   "name": "wide-pluck"
 }

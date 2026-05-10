@@ -55,6 +55,11 @@ def capture_state(gui) -> dict:
         "legato": int(gui.legato_knob.get()),
     }
 
+    unison = {
+        "voices": int(gui.unison_voices_knob.get()),
+        "detune": float(gui.unison_detune_knob.get()),
+    }
+
     return {
         "schema_version": SCHEMA_VERSION,
         "app": APP_NAME,
@@ -63,6 +68,7 @@ def capture_state(gui) -> dict:
         "wavetable": wavetable,
         "lfo": lfo,
         "mono": mono,
+        "unison": unison,
     }
 
 
@@ -164,6 +170,19 @@ def apply_state(gui, data: dict) -> None:
         enabled = bool(mono.get("enabled", False))
         if enabled != gui._mono_enabled:
             gui._on_mono_toggle()
+
+    # 7) Unison.
+    unison = data.get("unison")
+    if unison is not None:
+        try:
+            gui.unison_voices_knob.set(int(unison.get("voices", 1)))
+        except Exception:
+            pass
+        try:
+            gui.unison_detune_knob.set(float(unison.get("detune", 0.0)))
+        except Exception:
+            pass
+        gui._on_unison_changed()
 
 
 def _widget_value(widget):

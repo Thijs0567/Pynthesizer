@@ -36,6 +36,7 @@ MIDI input is opened automatically if a device is connected. The GUI always laun
 
 ## Oscillator
 
+- **Unison**: stack 1–8 sub-voices per note, each slightly detuned; Voices knob sets count, Detune knob sets total spread in cents (0–100 ¢); sub-voices are evenly distributed around the base pitch; state is saved in presets
 - **Dual wavetable slots (A / B)**: each slot has 16 independent harmonic amplitude sliders and a live waveform preview
 - **Morph knob**: continuously interpolates between slot A and slot B (32 steps); LFO-assignable
 - **Edit slot toggle**: switch which slot (A or B) the harmonic sliders currently edit
@@ -122,6 +123,7 @@ synth.set_bitcrusher(bits=8.0, downsample=4, wet=0.5)
 synth.set_wavetable(np.array([1.0, 0.5, 0.0, ...], dtype=np.float32))  # 16 harmonics
 synth.set_mono_mode(True)          # enable mono/legato mode
 synth.set_portamento(0.5)          # 0.0–1.0 → 0–2 s glide time
+synth.set_unison(4, 20.0)          # 4 sub-voices, 20 cents total spread (0–100 ct)
 ```
 
 **Compressor Settings** (tweak in `src/synthesizer.py`):

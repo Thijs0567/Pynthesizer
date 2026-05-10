@@ -161,7 +161,7 @@ class Synthesizer:
 
     def set_unison(self, voices: int, detune: float) -> None:
         self.unison_voices = max(1, min(8, int(voices)))
-        self.unison_detune = max(0.0, min(50.0, float(detune)))
+        self.unison_detune = max(0.0, min(100.0, float(detune)))
 
     def _unison_frequencies(self, base_freq: float) -> list:
         n = self.unison_voices
