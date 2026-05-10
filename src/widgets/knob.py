@@ -52,6 +52,7 @@ class Knob(tk.Frame):
         initial=None,
         bg=theme.BG_PANEL,
         on_right_click=None,
+        logarithmic=False,
     ):
         super().__init__(parent, bg=bg)
 
@@ -61,6 +62,7 @@ class Knob(tk.Frame):
         self._format = value_format
         self._command = command
         self._size = int(size)
+        self._logarithmic = logarithmic and self._from > 0 and self._to > 0
         self._initial = float(initial) if initial is not None else self._from
         self._value = self._initial
 
@@ -162,12 +164,29 @@ class Knob(tk.Frame):
 
     def _fraction(self):
         """Return current (or overridden) value as 0..1 along the from_->to span."""
-        span = self._to - self._from
-        if span == 0:
-            return 0.0
         v = self._display_override if self._display_override is not None else self._value
-        f = (v - self._from) / span
+        if self._logarithmic:
+            log_min = math.log(self._from)
+            log_max = math.log(self._to)
+            span = log_max - log_min
+            if span == 0:
+                return 0.0
+            f = (math.log(max(v, self._from)) - log_min) / span
+        else:
+            span = self._to - self._from
+            if span == 0:
+                return 0.0
+            f = (v - self._from) / span
         return max(0.0, min(1.0, f))
+
+    def _fraction_to_value(self, f):
+        """Convert a 0..1 fraction back to a value, respecting log scale."""
+        f = max(0.0, min(1.0, f))
+        if self._logarithmic:
+            log_min = math.log(self._from)
+            log_max = math.log(self._to)
+            return math.exp(log_min + f * (log_max - log_min))
+        return self._from + f * (self._to - self._from)
 
     def set_display_override(self, value):
         """Visually show ``value`` without changing stored state or firing command.
@@ -254,11 +273,17 @@ class Knob(tk.Frame):
             return
         dy = self._drag_y0 - event.y
         self._drag_delta_px = dy
-        span = self._to - self._from
-        delta = dy * span / _DRAG_PIXELS_FULL_RANGE
+        df = dy / _DRAG_PIXELS_FULL_RANGE
         if event.state & 0x0001:  # Shift
-            delta *= 0.1
-        self.set(self._drag_v0 + delta)
+            df *= 0.1
+        v0 = self._drag_v0
+        if self._logarithmic:
+            log_min = math.log(self._from)
+            log_max = math.log(self._to)
+            frac0 = (math.log(max(v0, self._from)) - log_min) / (log_max - log_min)
+        else:
+            frac0 = (v0 - self._from) / (self._to - self._from)
+        self.set(self._fraction_to_value(frac0 + df))
 
     def _on_release(self, _event):
         self._drag_y0 = None
@@ -272,10 +297,18 @@ class Knob(tk.Frame):
 
     def _on_wheel(self, event):
         steps = event.delta / 120.0
-        step = self._resolution if self._resolution > 0 else (self._to - self._from) / 100.0
-        if event.state & 0x0001:  # Shift = fine
-            step *= 0.1
-        self.set(self._value + steps * step)
+        if self._logarithmic:
+            # One wheel click = 1/50 of full log range
+            df = steps / 50.0
+            if event.state & 0x0001:
+                df *= 0.1
+            frac = self._fraction()
+            self.set(self._fraction_to_value(frac + df))
+        else:
+            step = self._resolution if self._resolution > 0 else (self._to - self._from) / 100.0
+            if event.state & 0x0001:
+                step *= 0.1
+            self.set(self._value + steps * step)
 
     def _on_wheel_x11_up(self, event):
         event.delta = 120

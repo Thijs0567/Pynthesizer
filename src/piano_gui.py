@@ -313,7 +313,8 @@ class PianoGUI:
         self.attack_scale = Knob(knob_row, from_=1, to=500, resolution=1,
                                  label="Attack", value_format="{:.0f} ms",
                                  initial=int(self.attack * 1000),
-                                 command=self._on_adsr_changed)
+                                 command=self._on_adsr_changed,
+                                 logarithmic=True)
         self.attack_scale.set(int(self.attack * 1000))
         self.attack_scale.grid(row=0, column=0, padx=6, pady=4)
         self._register_assignable('attack', self.attack_scale, self._on_adsr_changed)
@@ -321,7 +322,8 @@ class PianoGUI:
         self.decay_scale = Knob(knob_row, from_=1, to=500, resolution=1,
                                 label="Decay", value_format="{:.0f} ms",
                                 initial=int(self.decay * 1000),
-                                command=self._on_adsr_changed)
+                                command=self._on_adsr_changed,
+                                logarithmic=True)
         self.decay_scale.set(int(self.decay * 1000))
         self.decay_scale.grid(row=0, column=1, padx=6, pady=4)
         self._register_assignable('decay', self.decay_scale, self._on_adsr_changed)
@@ -337,7 +339,8 @@ class PianoGUI:
         self.release_scale = Knob(knob_row, from_=1, to=2000, resolution=1,
                                   label="Release", value_format="{:.0f} ms",
                                   initial=int(self.release * 1000),
-                                  command=self._on_adsr_changed)
+                                  command=self._on_adsr_changed,
+                                  logarithmic=True)
         self.release_scale.set(int(self.release * 1000))
         self.release_scale.grid(row=0, column=3, padx=6, pady=4)
         self._register_assignable('release', self.release_scale, self._on_adsr_changed)
@@ -1273,11 +1276,13 @@ class PianoGUI:
         if h <= 1:
             h = 100
         
-        # Margins
+        # Margins — top headroom so the peak is never clipped; bottom strip for labels
         margin_x = 40
-        margin_y = 20
+        margin_y = 30        # top margin
+        label_strip = 30     # pixels reserved at the bottom for A/D/S/R labels
+        baseline_y = h - label_strip  # y-coordinate of the time (zero-amplitude) axis
         graph_w = w - margin_x * 2
-        graph_h = h - margin_y * 2
+        graph_h = baseline_y - margin_y
         
         # Total time (arbitrary for visualization)
         total_time = self.attack + self.decay + 1.0 + self.release  # 1 sec sustain
@@ -1286,45 +1291,35 @@ class PianoGUI:
         time_scale = graph_w / total_time
         
         # Draw grid
-        self.envelope_canvas.create_line(margin_x, h - margin_y, w - margin_x, h - margin_y,
+        self.envelope_canvas.create_line(margin_x, baseline_y, w - margin_x, baseline_y,
                                         fill=th.BORDER_SUBTLE, width=1)  # Time axis
-        self.envelope_canvas.create_line(margin_x, margin_y, margin_x, h - margin_y,
+        self.envelope_canvas.create_line(margin_x, margin_y, margin_x, baseline_y,
                                         fill=th.BORDER_SUBTLE, width=1)  # Amplitude axis
 
-        # Draw labels
-        self.envelope_canvas.create_text(margin_x - 15, h - margin_y, text='0',
+        # Draw axis labels
+        self.envelope_canvas.create_text(margin_x - 15, baseline_y, text='0',
                                         fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
-        self.envelope_canvas.create_text(margin_x - 15, margin_y + graph_h, text='1',
+        self.envelope_canvas.create_text(margin_x - 15, margin_y, text='1',
                                         fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
-        
+
         # Build envelope points
         points = []
-        
+
         # Start
-        x = margin_x
-        y = h - margin_y
-        points.append((x, y))
-        
-        # Attack
-        x = margin_x + self.attack * time_scale
-        y = margin_y
-        points.append((x, y))
-        
-        # Decay
-        sustain_y = h - margin_y - self.sustain * graph_h
-        x = margin_x + (self.attack + self.decay) * time_scale
-        y = sustain_y
-        points.append((x, y))
-        
+        points.append((margin_x, baseline_y))
+
+        # Attack peak
+        points.append((margin_x + self.attack * time_scale, margin_y))
+
+        # Decay to sustain
+        sustain_y = baseline_y - self.sustain * graph_h
+        points.append((margin_x + (self.attack + self.decay) * time_scale, sustain_y))
+
         # Sustain (flat)
-        x = margin_x + (self.attack + self.decay + 1.0) * time_scale
-        y = sustain_y
-        points.append((x, y))
-        
-        # Release
-        x = margin_x + total_time * time_scale
-        y = h - margin_y
-        points.append((x, y))
+        points.append((margin_x + (self.attack + self.decay + 1.0) * time_scale, sustain_y))
+
+        # Release to zero
+        points.append((margin_x + total_time * time_scale, baseline_y))
         
         # Draw envelope line
         if len(points) > 1:
@@ -1339,25 +1334,22 @@ class PianoGUI:
                 self.envelope_canvas.create_oval(x - 3, y - 3, x + 3, y + 3,
                                                fill=th.ACCENT, outline=th.ACCENT_MUTED)
 
-        # Draw attack label
-        attack_x = margin_x + self.attack * time_scale / 2
-        self.envelope_canvas.create_text(attack_x, h - margin_y + 15, text='A',
-                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
-
-        # Draw decay label
-        decay_x = margin_x + self.attack * time_scale + self.decay * time_scale / 2
-        self.envelope_canvas.create_text(decay_x, h - margin_y + 15, text='D',
-                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
-
-        # Draw sustain label
-        sustain_x = margin_x + (self.attack + self.decay) * time_scale + 0.5 * time_scale
-        self.envelope_canvas.create_text(sustain_x, h - margin_y + 15, text='S',
-                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
-
-        # Draw release label
-        release_x = margin_x + (self.attack + self.decay + 1.0) * time_scale + self.release * time_scale / 2
-        self.envelope_canvas.create_text(release_x, h - margin_y + 15, text='R',
-                                        fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
+        # Draw ADSR labels inside the bottom reserved strip; skip any that
+        # would overlap a previously drawn label (min 14 px separation).
+        label_y = h - 15
+        min_gap = 14
+        label_positions = [
+            (margin_x + self.attack * time_scale / 2, 'A'),
+            (margin_x + self.attack * time_scale + self.decay * time_scale / 2, 'D'),
+            (margin_x + (self.attack + self.decay) * time_scale + 0.5 * time_scale, 'S'),
+            (margin_x + (self.attack + self.decay + 1.0) * time_scale + self.release * time_scale / 2, 'R'),
+        ]
+        last_drawn_x = margin_x - min_gap - 1
+        for lx, letter in label_positions:
+            lx = max(lx, last_drawn_x + min_gap)
+            self.envelope_canvas.create_text(lx, label_y, text=letter,
+                                            fill=th.TEXT_SECONDARY, font=th.FONT_VALUE)
+            last_drawn_x = lx
     
     def update_gain_meter(self, current_level: float, peak_level: float, is_clipping: bool = False):
         self.smoothed_level = (self.meter_smooth_alpha * current_level
