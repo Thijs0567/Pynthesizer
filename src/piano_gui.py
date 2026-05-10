@@ -2,7 +2,7 @@
 Simple clickable piano GUI for the synthesizer with ADSR controls.
 """
 import tkinter as tk
-from tkinter import Canvas, Scale, HORIZONTAL, filedialog, messagebox
+from tkinter import Canvas, Scale, filedialog, messagebox
 from typing import Callable, Optional, Dict, Tuple
 import math
 from pathlib import Path
@@ -579,22 +579,12 @@ class PianoGUI:
         # ── Delay ─────────────────────────────────────────────────────────
         dly = _subgroup(groups_row, "Delay")
 
-        time_col = tk.Frame(dly, bg=th.BG_PANEL)
-        time_col.grid(row=0, column=0, padx=5, pady=4, sticky='n')
-        tk.Label(time_col, text="Time", font=th.FONT_LABEL_BOLD,
-                 fg=th.ACCENT_MUTED, bg=th.BG_PANEL).pack()
-        self.delay_time_scale = Scale(time_col, from_=10, to=1000,
-                                      orient=HORIZONTAL,
-                                      bg=th.BG_PANEL, fg=th.TEXT_PRIMARY, length=120,
-                                      troughcolor=th.BG_INSET,
-                                      activebackground=th.ACCENT_MUTED,
-                                      highlightthickness=0, bd=0,
-                                      label="", showvalue=True,
-                                      command=self._on_delay_changed)
+        self.delay_time_scale = Knob(dly, from_=10, to=1000, resolution=10,
+                                     label="Time", value_format="{:.0f}ms",
+                                     initial=250,
+                                     command=self._on_delay_changed)
         self.delay_time_scale.set(250)
-        self.delay_time_scale.pack()
-        tk.Label(time_col, text="ms", font=th.FONT_VALUE,
-                 fg=th.TEXT_SECONDARY, bg=th.BG_PANEL).pack()
+        self.delay_time_scale.grid(row=0, column=0, padx=5, pady=4)
 
         self.delay_fb_scale = Knob(dly, from_=0, to=90, resolution=1,
                                    label="Feedback", value_format="{:.0f}%",
@@ -975,8 +965,9 @@ class PianoGUI:
         bar = tk.Frame(parent, bg=th.BG_PANEL)
         bar.pack(padx=10, pady=(0, 6), fill=tk.X)
 
+        self._current_preset_name = "Standard"
         self._preset_menu_btn = tk.Menubutton(
-            bar, text="Preset  ▾", font=th.FONT_LABEL_BOLD,
+            bar, text="Standard  ▾", font=th.FONT_LABEL_BOLD,
             bg=th.BG_INSET, fg=th.TEXT_PRIMARY,
             activebackground=th.ACCENT, activeforeground=th.TEXT_PRIMARY,
             relief='flat', bd=0, padx=10, pady=3, cursor='hand2',
@@ -1058,12 +1049,19 @@ class PianoGUI:
             messagebox.showerror("Save preset failed",
                                  f"{type(e).__name__}: {e}")
             return
+        self._set_preset_label(Path(path).stem)
         self._rebuild_preset_menu()
+
+    def _set_preset_label(self, name: str):
+        self._current_preset_name = name
+        self._preset_menu_btn.config(text=f"{name}  ▾")
 
     def _load_preset_from(self, path: Path):
         try:
             data = _presets.load_preset(path)
             _presets.apply_state(self, data)
+            label = path.stem
+            self._set_preset_label(label)
         except Exception as e:
             messagebox.showerror("Load preset failed",
                                  f"{type(e).__name__}: {e}")
@@ -1124,34 +1122,35 @@ class PianoGUI:
 
         self._create_preset_bar(section)
 
-        # Preset buttons row
-        preset_row = tk.Frame(section, bg=th.BG_PANEL)
-        preset_row.pack(padx=10, pady=(0, 4))
+        graph_row = tk.Frame(section, bg=th.BG_PANEL)
+        graph_row.pack(padx=10, pady=(4, 6), fill=tk.BOTH, expand=True)
+
+        # Left column: waveform preset buttons (centered) above the canvas
+        graph_col = tk.Frame(graph_row, bg=th.BG_PANEL)
+        graph_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        preset_row = tk.Frame(graph_col, bg=th.BG_PANEL)
+        preset_row.pack(pady=(0, 4))  # centered by default (no anchor/fill)
 
         self._preset_btn_canvases = {}
         for name in ('sine', 'saw', 'square', 'triangle', 'semisine'):
-            btn_frame = tk.Frame(preset_row, bg=th.BORDER_SUBTLE,
-                                 cursor='hand2')
+            btn_frame = tk.Frame(preset_row, bg=th.BORDER_SUBTLE, cursor='hand2')
             btn_frame.pack(side=tk.LEFT, padx=3)
             c = tk.Canvas(btn_frame, bg=th.BG_INSET, highlightthickness=0,
                           width=54, height=36)
             c.pack(padx=1, pady=1)
             wt = self._make_preset_waveform(name)
-            # Draw after packing so winfo_width is correct on next update
             c.bind('<Configure>', lambda _, cv=c, w=wt:
                    self._draw_preset_button_waveform(cv, w))
             c.bind('<Button-1>', lambda _, n=name: self._apply_preset(n))
             btn_frame.bind('<Button-1>', lambda _, n=name: self._apply_preset(n))
             self._preset_btn_canvases[name] = c
 
-        graph_row = tk.Frame(section, bg=th.BG_PANEL)
-        graph_row.pack(padx=10, pady=(4, 6), fill=tk.BOTH, expand=True)
-
         self.waveform_canvas = tk.Canvas(
-            graph_row, bg=th.BG_INSET, highlightthickness=1,
+            graph_col, bg=th.BG_INSET, highlightthickness=1,
             highlightbackground=th.BORDER_SUBTLE, width=380, height=120,
         )
-        self.waveform_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.waveform_canvas.pack(fill=tk.BOTH, expand=True)
 
         # A/B slot-select buttons placed inside the bottom-left of the canvas.
         self._ab_buttons = {}

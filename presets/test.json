@@ -2,14 +2,16 @@
   "schema_version": 1,
   "app": "PythonSynth",
   "knobs": {
-    "lpf_cutoff": 100,
-    "lpf_q": 0.7,
-    "volume": 70,
     "attack": 10,
     "decay": 100,
     "sustain": 70,
     "release": 300,
     "morph": 0,
+    "lpf_cutoff": 52,
+    "lpf_q": 0.7,
+    "volume": 70,
+    "dist_drive": 15.5,
+    "dist_wet": 29,
     "reverb_room": 50,
     "reverb_damp": 50,
     "reverb_wet": 0,
@@ -24,7 +26,7 @@
   },
   "scales": {
     "delay_time": 250,
-    "transpose": 0
+    "transpose": -1
   },
   "wavetable": {
     "a": [
@@ -83,6 +85,10 @@
       }
     ],
     "routes": {}
+  },
+  "mono": {
+    "enabled": false,
+    "legato": 100
   },
   "name": "test"
 }

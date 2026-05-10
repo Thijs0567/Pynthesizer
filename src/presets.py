@@ -91,6 +91,9 @@ def apply_state(gui, data: dict) -> None:
         # Sync harmonic sliders to the (now-updated) edit slot without firing
         # per-slider writeback (which would clobber our arrays).
         gui._refresh_sliders_from_slot()
+        # Push the new arrays to the engine immediately; morph_knob.set() below
+        # is a no-op when the morph value hasn't changed and would skip this.
+        gui._recompute_current_wt()
 
     # 2) Assignable knobs — .set() fires the command handler which pushes to engine.
     for kid, val in data.get("knobs", {}).items():
