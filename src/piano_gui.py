@@ -43,6 +43,7 @@ class PianoGUI:
                  on_distortion_change: Callable = None,
                  on_bitcrusher_change: Callable = None,
                  on_panic: Callable = None,
+                 on_unison_change: Callable = None,
                  lfo_bank=None):
         """
         Initialize the piano GUI.
@@ -66,6 +67,7 @@ class PianoGUI:
         self.on_distortion_change = on_distortion_change or (lambda drive, wet: None)
         self.on_bitcrusher_change = on_bitcrusher_change or (lambda bits, ds, wet: None)
         self.on_panic = on_panic or (lambda: None)
+        self.on_unison_change = on_unison_change or (lambda v, d: None)
 
         # LFO modulation bank (optional; no-op routing if absent).
         from src.lfo import LFOBank  # local import to avoid cycle concerns
@@ -1111,6 +1113,11 @@ class PianoGUI:
         self._morph_pos = int(round(self._eff(self.morph_knob, 'morph')))
         self._recompute_current_wt()
 
+    def _on_unison_changed(self, _=None):
+        v = int(self.unison_voices_knob.get())
+        d = float(self.unison_detune_knob.get())
+        self.on_unison_change(v, d)
+
     def _create_oscillator_controls(self, parent):
         """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
         section = tk.Frame(parent, bg=th.BG_PANEL,
@@ -1180,6 +1187,27 @@ class PianoGUI:
         )
         self.morph_knob.pack(side=tk.LEFT, padx=(10, 0))
         self._register_assignable('morph', self.morph_knob, self._on_morph_changed)
+
+        # Unison knobs
+        unison_col = tk.Frame(graph_row, bg=th.BG_PANEL)
+        unison_col.pack(side=tk.LEFT, padx=(10, 0))
+        tk.Frame(unison_col, bg=th.ACCENT, height=1).pack(fill=tk.X, padx=2)
+        tk.Label(unison_col, text="UNISON", font=th.FONT_SUBGROUP,
+                 fg=th.ACCENT_MUTED, bg=th.BG_PANEL).pack(pady=(3, 2))
+
+        self.unison_voices_knob = Knob(unison_col, from_=1, to=8, resolution=1,
+                                       label="Voices", value_format="{:.0f}",
+                                       size=56, initial=1,
+                                       command=self._on_unison_changed,
+                                       bg=th.BG_PANEL)
+        self.unison_voices_knob.pack(pady=(0, 4))
+
+        self.unison_detune_knob = Knob(unison_col, from_=0, to=50, resolution=0.5,
+                                       label="Detune", value_format="{:.1f} ct",
+                                       size=56, initial=0,
+                                       command=self._on_unison_changed,
+                                       bg=th.BG_PANEL)
+        self.unison_detune_knob.pack()
 
         slider_row = tk.Frame(section, bg=th.BG_PANEL)
         slider_row.pack(padx=10, pady=(0, 10))

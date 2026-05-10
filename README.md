@@ -1,6 +1,6 @@
 # PythonSynth - Polyphonic Synthesizer
 
-A polyphonic wavetable synthesizer with a clickable GUI piano, QWERTY keyboard playability, ADSR, stereo effects, and optional MIDI input.
+A polyphonic/monophonic wavetable synthesizer with a clickable GUI piano, QWERTY keyboard playability, ADSR, stereo effects, mono mode with portamento/legato, and optional MIDI input.
 
 ## Quick Start
 
@@ -16,6 +16,7 @@ MIDI input is opened automatically if a device is connected. The GUI always laun
 - **Clickable Piano**: 3 octaves + 1 key (C4–C7), click or drag to play
 - **QWERTY Keyboard**: Play notes from your computer keyboard
 - **Polyphony**: Up to 16 simultaneous voices
+- **Mono Mode**: Toggle button switches to single-voice mode with true legato (envelope continues across note changes) and portamento glide
 - **Visual Feedback**: Keys highlight when pressed (mouse, keyboard, and MIDI); panic button clears all highlights
 - **Voice Counter**: Real-time display of active voices
 - **Level Meter**: Logarithmic dB scale (-60 dB to 0 dB), reads post-compressor
@@ -51,17 +52,18 @@ MIDI input is opened automatically if a device is connected. The GUI always laun
 
 ## Presets
 
-- **Save / Load**: full synth state (ADSR, effects, wavetable A/B, morph, LFO routing) stored as JSON in `presets/`
-- **Preset browser**: scan and load any `.json` preset from the `presets/` folder directly from the GUI
+- **Save / Load**: full synth state (ADSR, effects, wavetable A/B, morph, LFO routing, mono mode, portamento) stored as JSON in `presets/`
+- **Preset browser**: scan and load any `.json` preset from the `presets/` folder directly from the GUI; the preset menu button shows the currently loaded preset name
 
 ## What It Does
 
 Each note plays through the wavetable oscillator with:
-- **ADSR Envelope**: Fully customizable Attack, Decay, Sustain, Release
+- **ADSR Envelope**: Fully customizable Attack, Decay, Sustain, Release; Attack/Decay/Release knobs use a logarithmic scale for finer control at short times
 - **Velocity-based Volume**: Dynamic response from MIDI/click (0–127)
 - **Pitch Bend Support**: ±2 semitones (or custom range)
 - **Voice Stealing**: Oldest-note priority when exceeding max voices
 - **Smooth Retrigger**: No clicks when re-playing the same note
+- **Mono Mode + Legato/Portamento**: Single-voice mode with a note stack (most-recently-held note resumes on release), true legato (envelope never resets on note change), and a portamento glide with 0–2 s range controlled by the Portamento knob
 - **Polyphony Gain Scaling**: Output is normalised by √(sum of active envelope amplitudes), keeping perceived loudness constant whether 1 or 16 voices are playing. The scaling is smoothed (50 ms) so voices fading through release cause no pumping or level jumps.
 - **Compressor + Limiter**:
   - RMS compressor with soft knee
@@ -74,6 +76,7 @@ Each note plays through the wavetable oscillator with:
   - **Low-Pass Filter**: Variable cutoff and Q (resonance)
   - **Chorus**: Stereo LFO-modulated delay (L/R phases offset by 180°); rate 0.05–8 Hz, depth, and wet/dry mix (mono → stereo)
 - **Master Volume**: knob range mapped to 0–43% linear; defaults to 70% knob (0.3 linear) for comfortable headroom
+- **Portamento**: knob in the Master section; only active in mono mode; 0% = instant, 100% = 2 s glide
 
 ## Architecture
 
@@ -117,6 +120,8 @@ synth.set_reverb(room_size=0.5, damping=0.5, wet=0.3)
 synth.set_delay(delay_ms=250, feedback=0.4, wet=0.2)
 synth.set_bitcrusher(bits=8.0, downsample=4, wet=0.5)
 synth.set_wavetable(np.array([1.0, 0.5, 0.0, ...], dtype=np.float32))  # 16 harmonics
+synth.set_mono_mode(True)          # enable mono/legato mode
+synth.set_portamento(0.5)          # 0.0–1.0 → 0–2 s glide time
 ```
 
 **Compressor Settings** (tweak in `src/synthesizer.py`):

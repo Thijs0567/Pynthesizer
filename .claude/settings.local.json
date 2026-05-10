@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Find \"c:\\\\Users\\\\Thijs\\\\Things\\\\Old files organized\\\\Python\\\\PythonSynth\\\\src\" -name \"*.py\" -type f)",
+      "Bash(Find \"c:\\\\Users\\\\Thijs\\\\Things\\\\Old files organized\\\\Python\\\\PythonSynth\" -name \"*.md\" -type f)"
+    ]
+  }
+}

@@ -53,6 +53,10 @@ class Synthesizer:
         self.pitch_bend_amount = 0  # -8192 to 8191
         self.pitch_bend_range = 2  # semitones
 
+        # Unison
+        self.unison_voices = 1    # 1–8 sub-voices per note
+        self.unison_detune = 0.0  # total detune spread in cents
+
         # Mono mode
         self.mono_mode = False
         self.portamento_time = 0.0  # seconds; 0 = instant (no glide)
@@ -151,8 +155,20 @@ class Synthesizer:
         """Update harmonic amplitudes for all active and future voices."""
         wt = np.clip(np.array(amplitudes, dtype=np.float32)[:16], 0.0, 1.0)
         self._wavetable = wt
-        for voice in list(self.active_voices.values()):
-            voice.wavetable = wt
+        for voices in list(self.active_voices.values()):
+            for voice in voices:
+                voice.wavetable = wt
+
+    def set_unison(self, voices: int, detune: float) -> None:
+        self.unison_voices = max(1, min(8, int(voices)))
+        self.unison_detune = max(0.0, min(50.0, float(detune)))
+
+    def _unison_frequencies(self, base_freq: float) -> list:
+        n = self.unison_voices
+        if n == 1:
+            return [base_freq]
+        offsets = np.linspace(-self.unison_detune / 2, self.unison_detune / 2, n)
+        return [base_freq * 2 ** (c / 1200.0) for c in offsets]
 
     def set_mono_mode(self, enabled: bool) -> None:
         self.mono_mode = enabled
@@ -169,53 +185,63 @@ class Synthesizer:
             self._mono_note_on(note, velocity)
             return
         if note in self.active_voices:
-            voice = self.active_voices[note]
-            # Save envelope level so the attack restarts from here, not from 0.
-            # Resetting time to 0 without this causes an instant amplitude drop
-            # (sustain_level → 0) that sounds like a click or phase jump.
-            voice._retrigger_level = voice._get_envelope_value()
-            voice.is_releasing = False
-            voice.time = 0.0
-            voice.velocity = velocity
-        else:
-            # Check if we need to steal a voice
-            if len(self.active_voices) >= self.max_voices:
-                # Find the oldest voice and remove it
-                oldest_note = min(self.active_voices.keys(),
-                                key=lambda n: self.active_voices[n].creation_time)
-                del self.active_voices[oldest_note]
-
-            # Create new voice
-            frequency = self.note_to_frequency(note)
-            voice = Voice(self.sample_rate, frequency, velocity,
-                        self.attack, self.decay, self.sustain, self.release,
-                        creation_time=self.voice_creation_counter,
-                        wavetable=self._wavetable)
-            self.voice_creation_counter += 1
-            self.active_voices[note] = voice
-
-    def _mono_note_on(self, note: int, velocity: int) -> None:
-        freq = self.note_to_frequency(note)
-        if note not in self._mono_note_stack:
-            self._mono_note_stack.append(note)
-        if self.active_voices:
-            voice = next(iter(self.active_voices.values()))
-            voice.start_glide(freq, self.portamento_time)
-            # Always true legato: envelope continues uninterrupted.
-            # If voice is in release, rescue it back into sustain.
-            if voice.is_releasing:
+            for voice in self.active_voices[note]:
+                # Save envelope level so the attack restarts from here, not from 0.
+                # Resetting time to 0 without this causes an instant amplitude drop
+                # (sustain_level → 0) that sounds like a click or phase jump.
                 voice._retrigger_level = voice._get_envelope_value()
                 voice.is_releasing = False
                 voice.time = 0.0
-            voice.velocity = velocity
-            self.active_voices = {note: voice}
+                voice.velocity = velocity
         else:
-            voice = Voice(self.sample_rate, freq, velocity,
-                          self.attack, self.decay, self.sustain, self.release,
-                          creation_time=self.voice_creation_counter,
-                          wavetable=self._wavetable)
+            # Check if we need to steal a voice
+            if len(self.active_voices) >= self.max_voices:
+                # Find the oldest voice group and remove it
+                oldest_note = min(self.active_voices.keys(),
+                                key=lambda n: self.active_voices[n][0].creation_time)
+                del self.active_voices[oldest_note]
+
+            # Create unison sub-voices
+            base_freq = self.note_to_frequency(note)
+            freqs = self._unison_frequencies(base_freq)
+            voices = [
+                Voice(self.sample_rate, f, velocity,
+                      self.attack, self.decay, self.sustain, self.release,
+                      creation_time=self.voice_creation_counter,
+                      wavetable=self._wavetable)
+                for f in freqs
+            ]
             self.voice_creation_counter += 1
-            self.active_voices = {note: voice}
+            self.active_voices[note] = voices
+
+    def _mono_note_on(self, note: int, velocity: int) -> None:
+        base_freq = self.note_to_frequency(note)
+        freqs = self._unison_frequencies(base_freq)
+        if note not in self._mono_note_stack:
+            self._mono_note_stack.append(note)
+        if self.active_voices:
+            voices = next(iter(self.active_voices.values()))
+            for voice, f in zip(voices, freqs):
+                voice.start_glide(f, self.portamento_time)
+                # Always true legato: envelope continues uninterrupted.
+                # If voice is in release, rescue it back into sustain.
+                if voice.is_releasing:
+                    voice._retrigger_level = voice._get_envelope_value()
+                    voice.is_releasing = False
+                    voice.time = 0.0
+                voice.velocity = velocity
+            # Re-key under the new note
+            self.active_voices = {note: voices}
+        else:
+            voices = [
+                Voice(self.sample_rate, f, velocity,
+                      self.attack, self.decay, self.sustain, self.release,
+                      creation_time=self.voice_creation_counter,
+                      wavetable=self._wavetable)
+                for f in freqs
+            ]
+            self.voice_creation_counter += 1
+            self.active_voices = {note: voices}
 
     def _on_note_off(self, note: int):
         """Handle MIDI note off event."""
@@ -223,7 +249,8 @@ class Synthesizer:
             self._mono_note_off(note)
             return
         if note in self.active_voices:
-            self.active_voices[note].note_off()
+            for voice in self.active_voices[note]:
+                voice.note_off()
 
     def _mono_note_off(self, note: int) -> None:
         if note in self._mono_note_stack:
@@ -231,14 +258,17 @@ class Synthesizer:
         if self._mono_note_stack:
             # Resume the most recently pressed still-held note.
             prev_note = self._mono_note_stack[-1]
-            freq = self.note_to_frequency(prev_note)
+            base_freq = self.note_to_frequency(prev_note)
+            freqs = self._unison_frequencies(base_freq)
             if self.active_voices:
-                voice = next(iter(self.active_voices.values()))
-                voice.start_glide(freq, self.portamento_time)
-                self.active_voices = {prev_note: voice}
+                voices = next(iter(self.active_voices.values()))
+                for voice, f in zip(voices, freqs):
+                    voice.start_glide(f, self.portamento_time)
+                self.active_voices = {prev_note: voices}
         else:
             if self.active_voices:
-                next(iter(self.active_voices.values())).note_off()
+                for voice in next(iter(self.active_voices.values())):
+                    voice.note_off()
 
     def panic(self):
         """Immediately silence all voices and flush effect tails."""
@@ -320,14 +350,15 @@ class Synthesizer:
     def _on_pitch_bend(self, value: int):
         """Handle MIDI pitch bend event."""
         self.pitch_bend_amount = value
-        
-        # Apply pitch bend to all active voices
+
         pitch_bend_semitones = (value / 8192.0) * self.pitch_bend_range
         pitch_bend_factor = 2 ** (pitch_bend_semitones / 12.0)
-        
-        for note, voice in list(self.active_voices.items()):
+
+        for note, voices in list(self.active_voices.items()):
             base_frequency = self.note_to_frequency(note)
-            voice.set_frequency(base_frequency * pitch_bend_factor)
+            bent_freqs = self._unison_frequencies(base_frequency * pitch_bend_factor)
+            for voice, f in zip(voices, bent_freqs):
+                voice.set_frequency(f)
     
     def generate_audio(self, num_samples: int) -> np.ndarray:
         """
@@ -357,15 +388,20 @@ class Synthesizer:
         # like a real electric piano that never clips
         
         env_sum = 0.0
-        for note, voice in list(self.active_voices.items()):
+        for note, voices in list(self.active_voices.items()):
             try:
-                if voice.is_active:
+                active_in_group = [v for v in voices if v.is_active]
+                if not active_in_group:
+                    notes_to_remove.append(note)
+                    continue
+                group_buf = np.zeros(num_samples, dtype=np.float32)
+                for voice in active_in_group:
                     samples = voice.generate_samples(num_samples)
                     if samples is not None and len(samples) == num_samples:
-                        output += samples
-                    env_sum += voice._get_envelope_value()
-                else:
-                    notes_to_remove.append(note)
+                        group_buf += samples
+                group_buf /= len(voices)
+                output += group_buf
+                env_sum += voices[0]._get_envelope_value()
             except Exception as e:
                 print(f"Error generating voice samples for note {note}: {type(e).__name__}: {e}")
                 notes_to_remove.append(note)

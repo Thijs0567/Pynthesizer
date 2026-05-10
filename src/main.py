@@ -78,6 +78,7 @@ def main():
             on_distortion_change=lambda drive, wet: synth.set_distortion(drive, wet),
             on_bitcrusher_change=lambda bits, ds, wet: synth.set_bitcrusher(bits, ds, wet),
             on_panic=synth.panic,
+            on_unison_change=lambda v, d: synth.set_unison(v, d),
             lfo_bank=synth.lfo_bank,
         )
 
