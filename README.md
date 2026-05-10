@@ -67,6 +67,7 @@ Each note plays through the wavetable oscillator with:
   - RMS compressor with soft knee
   - Peak limiter prevents clipping while preserving dynamics
 - **Effects Chain** (stereo output, in signal order):
+  - **Tube Distortion**: tanh soft-clip waveshaper with drive (1–20×) and wet/dry mix; output is gain-compensated so unity drive is transparent
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
   - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Bitcrusher**: Bit-depth reduction (1–24 bits) + sample-rate reduction via sample-and-hold downsampling (factor 1–32); wet/dry mix
@@ -82,7 +83,7 @@ MIDI / GUI click / QWERTY keyboard
     → Voice Pool (wavetable oscillator + ADSR per note)
     → Voice Mixer (sum active voices, √N envelope scaling)
     → Compressor (RMS stage + peak limiter)
-    → Effects Chain (Reverb → Delay → Bitcrusher → LPF → Chorus)
+    → Effects Chain (Distortion → Reverb → Delay → Bitcrusher → LPF → Chorus)
     → Master Volume
     → Audio Engine (stereo) → Speakers
 
@@ -97,7 +98,7 @@ LFO Bank (3 × sine LFO) → knob routing → modulates assignable parameters ea
 - `piano_gui.py` — Tkinter piano interface with all controls
 - `synthesizer.py` — Core synthesis engine & dynamics processor
 - `voice.py` — Individual wavetable oscillator + ADSR
-- `effects.py` — Effect chain (LPF, Reverb, Delay, Chorus, Bitcrusher)
+- `effects.py` — Effect chain (TubeDistortion, LPF, Reverb, Delay, Chorus, Bitcrusher)
 - `lfo.py` — LFO bank (3 sine LFOs) with knob routing registry
 - `presets.py` — Preset capture, apply, save (JSON), and folder scan
 - `midi_handler.py` — MIDI input handling

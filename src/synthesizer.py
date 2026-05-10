@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Optional
 from src.voice import Voice
 from src.midi_handler import MIDIHandler
-from src.effects import MasterVolume, LowPassFilter, Reverb, Delay, Chorus, Bitcrusher
+from src.effects import MasterVolume, LowPassFilter, Reverb, Delay, Chorus, Bitcrusher, TubeDistortion
 from src.lfo import LFOBank
 
 
@@ -79,6 +79,7 @@ class Synthesizer:
 
         # Effects chain
         self._volume = MasterVolume(initial_volume=0.3)  # = 70% knob × (3/7)
+        self._distortion = TubeDistortion(drive=1.0, wet=0.0)
         self._lpf    = LowPassFilter(sample_rate)
         self._reverb = Reverb(sample_rate, wet=0.0)
         self._delay  = Delay(sample_rate, wet=0.0)
@@ -131,6 +132,10 @@ class Synthesizer:
         self._chorus.set_rate(rate_hz)
         self._chorus.set_depth(depth)
         self._chorus.set_wet(wet)
+
+    def set_distortion(self, drive: float, wet: float) -> None:
+        self._distortion.set_drive(drive)
+        self._distortion.set_wet(wet)
 
     def set_bitcrusher(self, bits: float, downsample: int, wet: float) -> None:
         self._bitcrusher.set_bits(bits)
@@ -324,6 +329,7 @@ class Synthesizer:
         output = np.nan_to_num(output, nan=0.0, posinf=1.0, neginf=-1.0)
         
         output = self._volume.process(output)
+        output = self._distortion.process(output)
         output = self._reverb.process(output)
         output = self._delay.process(output)
         output = self._apply_compression(output)

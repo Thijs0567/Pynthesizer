@@ -40,6 +40,7 @@ class PianoGUI:
                  on_delay_change: Callable = None,
                  on_wavetable_change: Callable = None,
                  on_chorus_change: Callable = None,
+                 on_distortion_change: Callable = None,
                  on_bitcrusher_change: Callable = None,
                  on_panic: Callable = None,
                  lfo_bank=None):
@@ -62,6 +63,7 @@ class PianoGUI:
         self.on_delay_change  = on_delay_change  or (lambda ms, fb, wet: None)
         self.on_wavetable_change = on_wavetable_change or (lambda wt: None)
         self.on_chorus_change = on_chorus_change or (lambda rate, depth, wet: None)
+        self.on_distortion_change = on_distortion_change or (lambda drive, wet: None)
         self.on_bitcrusher_change = on_bitcrusher_change or (lambda bits, ds, wet: None)
         self.on_panic = on_panic or (lambda: None)
 
@@ -540,6 +542,25 @@ class PianoGUI:
             body.pack()
             return body
 
+        # ── Distortion ────────────────────────────────────────────────────
+        dist = _subgroup(groups_row, "Distortion")
+
+        self.dist_drive_scale = Knob(dist, from_=1, to=20, resolution=0.1,
+                                     label="Drive", value_format="{:.1f}x",
+                                     initial=1,
+                                     command=self._on_distortion_changed)
+        self.dist_drive_scale.set(1)
+        self.dist_drive_scale.grid(row=0, column=0, padx=5, pady=4)
+        self._register_assignable('dist_drive', self.dist_drive_scale, self._on_distortion_changed)
+
+        self.dist_wet_scale = Knob(dist, from_=0, to=100, resolution=1,
+                                   label="Wet", value_format="{:.0f}%",
+                                   initial=0,
+                                   command=self._on_distortion_changed)
+        self.dist_wet_scale.set(0)
+        self.dist_wet_scale.grid(row=0, column=1, padx=5, pady=4)
+        self._register_assignable('dist_wet', self.dist_wet_scale, self._on_distortion_changed)
+
         # ── Reverb ────────────────────────────────────────────────────────
         rev = _subgroup(groups_row, "Reverb")
         for col, (lbl, attr, kid, default) in enumerate([
@@ -826,6 +847,12 @@ class PianoGUI:
         cutoff = 20.0 * (1000.0 ** t)  # log mapping: 20 Hz → 20000 Hz
         q = self._eff(self.lpf_q_scale, 'lpf_q')
         self.on_lpf_change(cutoff, q)
+
+    def _on_distortion_changed(self, _):
+        self.on_distortion_change(
+            self._eff(self.dist_drive_scale, 'dist_drive'),
+            self._eff(self.dist_wet_scale,   'dist_wet') / 100.0,
+        )
 
     def _on_reverb_changed(self, _):
         self.on_reverb_change(

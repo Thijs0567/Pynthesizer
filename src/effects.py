@@ -6,6 +6,41 @@ import math
 import numpy as np
 
 
+class TubeDistortion:
+    """Soft-clip tube saturation using tanh waveshaping. Drive boosts gain into the clipper."""
+
+    def __init__(self, drive: float = 1.0, wet: float = 0.0,
+                 max_block_size: int = 4096):
+        self._drive = max(1.0, float(drive))
+        self._wet   = max(0.0, min(1.0, float(wet)))
+        self._buf   = np.zeros(max_block_size, dtype=np.float64)
+
+    def set_drive(self, drive: float) -> None:
+        # 1.0 = unity (no saturation), up to ~20.0 = heavy clipping
+        self._drive = max(1.0, min(20.0, float(drive)))
+
+    def set_wet(self, wet: float) -> None:
+        self._wet = max(0.0, min(1.0, float(wet)))
+
+    def process(self, signal: np.ndarray) -> np.ndarray:
+        n = len(signal)
+        if n > len(self._buf):
+            self._buf = np.zeros(n, dtype=np.float64)
+        wet = self._wet
+        dry = 1.0 - wet
+        drive = self._drive
+        out = self._buf
+        for i in range(n):
+            x = float(signal[i])
+            # tanh soft-clip; compensate output level by dividing by tanh(drive)
+            clipped = math.tanh(x * drive) / math.tanh(drive)
+            out[i] = dry * x + wet * clipped
+        return out[:n]
+
+    def reset_state(self) -> None:
+        pass  # stateless waveshaper
+
+
 class MasterVolume:
     def __init__(self, initial_volume: float = 0.8):
         self.volume = max(0.0, min(1.0, initial_volume))
