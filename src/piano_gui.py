@@ -29,7 +29,7 @@ class PianoGUI:
     }
     
     # 88-key range: A0 (MIDI 21) to C8 (MIDI 108)
-    # Note: this codebase uses octave*12 for C, so C4=48 (not standard 60).
+    # Note: this codebase uses octave*12 for C, so C4=60.
     # A0 = octave 1 note 9 = 21; C8 = octave 9 note 0 = 108.
     START_OCTAVE = 1
     END_OCTAVE = 8
@@ -514,7 +514,7 @@ class PianoGUI:
         btn_row = tk.Frame(section, bg=th.BG_PANEL)
         btn_row.pack(pady=(0, 6), padx=10)
 
-        self._lpf_key_track_enabled = False
+        self._lpf_key_track_enabled = False  # will be toggled on below
         self._lpf_key_track_btn = tk.Label(btn_row, text="KEY TRACK", font=th.FONT_LABEL_BOLD,
                                            fg=th.TEXT_SECONDARY, bg=th.BG_INSET,
                                            padx=8, pady=3, cursor='hand2',
@@ -522,6 +522,7 @@ class PianoGUI:
                                            highlightbackground=th.BORDER_SUBTLE)
         self._lpf_key_track_btn.pack(side=tk.LEFT)
         self._lpf_key_track_btn.bind('<Button-1>', lambda _: self._on_lpf_key_track_toggle())
+        self._on_lpf_key_track_toggle()  # enable key tracking by default
 
         knob_row = tk.Frame(section, bg=th.BG_PANEL)
         knob_row.pack(padx=10, pady=(2, 10))
@@ -1151,6 +1152,61 @@ class PianoGUI:
         v = int(self.unison_voices_knob.get())
         d = float(self.unison_detune_knob.get())
         self.on_unison_change(v, d)
+        if self._unison_overlay_active:
+            self._draw_unison_overlay()
+
+    def _show_unison_overlay(self):
+        self._unison_overlay_active = True
+        self._draw_unison_overlay()
+
+    def _hide_unison_overlay(self):
+        self._unison_overlay_active = False
+        self._draw_waveform()
+
+    def _draw_unison_overlay(self):
+        c = self.waveform_canvas
+        c.delete('all')
+        w = c.winfo_width() or 380
+        h = c.winfo_height() or 120
+
+        n_voices = int(self.unison_voices_knob.get())
+        detune   = float(self.unison_detune_knob.get())
+
+        mx = 16
+        draw_w = w - mx * 2
+        ct_range = 100.0
+
+        def ct_to_x(ct):
+            return mx + (ct + ct_range) / (2 * ct_range) * draw_w
+
+        mid_y = h // 2
+        c.create_line(mx, mid_y, w - mx, mid_y, fill=th.BORDER_SUBTLE, width=1)
+
+        c.create_text(mx,     h - 6, text="-100ct", fill=th.TEXT_SECONDARY, font=th.FONT_LABEL, anchor='sw')
+        c.create_text(w - mx, h - 6, text="+100ct", fill=th.TEXT_SECONDARY, font=th.FONT_LABEL, anchor='se')
+        c.create_text(w // 2, h - 6, text="0",      fill=th.TEXT_SECONDARY, font=th.FONT_LABEL, anchor='s')
+
+        if n_voices == 1:
+            positions = [0.0]
+        else:
+            positions = list(np.linspace(-detune / 2, detune / 2, n_voices))
+
+        bar_w = max(2, min(8, draw_w // max(n_voices * 3, 1)))
+        bar_h = h // 2 - 14
+
+        for ct in positions:
+            x = ct_to_x(ct)
+            c.create_rectangle(
+                x - bar_w // 2, mid_y - bar_h,
+                x + bar_w // 2, mid_y + bar_h,
+                fill=th.ACCENT, outline='',
+            )
+
+        x0 = ct_to_x(0.0)
+        c.create_line(x0, mid_y - 6, x0, mid_y + 6, fill=th.ACCENT_MUTED, width=1)
+
+        for lbl in getattr(self, '_ab_buttons', {}).values():
+            lbl.lift()
 
     def _create_oscillator_controls(self, parent):
         """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
@@ -1242,6 +1298,11 @@ class PianoGUI:
                                        command=self._on_unison_changed,
                                        bg=th.BG_PANEL)
         self.unison_detune_knob.pack()
+
+        self._unison_overlay_active = False
+        for _knob in (self.unison_voices_knob, self.unison_detune_knob):
+            _knob._canvas.bind('<ButtonPress-1>',   lambda *_: self._show_unison_overlay(), add='+')
+            _knob._canvas.bind('<ButtonRelease-1>', lambda *_: self._hide_unison_overlay(), add='+')
 
         slider_row = tk.Frame(section, bg=th.BG_PANEL)
         slider_row.pack(padx=10, pady=(0, 10))

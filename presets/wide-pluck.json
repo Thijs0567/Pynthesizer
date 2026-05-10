@@ -25,8 +25,7 @@
     "bc_wet": 7
   },
   "scales": {
-    "delay_time": 260,
-    "transpose": 0
+    "delay_time": 260
   },
   "wavetable": {
     "a": [
@@ -96,6 +95,9 @@
   "unison": {
     "voices": 5,
     "detune": 60.5
+  },
+  "lpf_key_track": {
+    "enabled": true
   },
   "name": "wide-pluck"
 }

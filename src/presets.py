@@ -31,7 +31,6 @@ def capture_state(gui) -> dict:
 
     scales = {
         "delay_time": int(gui.delay_time_scale.get()),
-        "transpose": int(gui.transpose_scale.get()),
     }
 
     wavetable = {
@@ -60,6 +59,10 @@ def capture_state(gui) -> dict:
         "detune": float(gui.unison_detune_knob.get()),
     }
 
+    lpf_key_track = {
+        "enabled": bool(gui._lpf_key_track_enabled),
+    }
+
     return {
         "schema_version": SCHEMA_VERSION,
         "app": APP_NAME,
@@ -69,6 +72,7 @@ def capture_state(gui) -> dict:
         "lfo": lfo,
         "mono": mono,
         "unison": unison,
+        "lpf_key_track": lpf_key_track,
     }
 
 
@@ -123,9 +127,6 @@ def apply_state(gui, data: dict) -> None:
     scales = data.get("scales", {})
     if "delay_time" in scales:
         gui.delay_time_scale.set(int(scales["delay_time"]))
-    if "transpose" in scales:
-        gui.transpose_scale.set(int(scales["transpose"]))
-        gui._on_transpose_changed(None)
 
     # 5) LFO: per-slot rate/amp, selection, routes.
     lfo = data.get("lfo")
@@ -183,6 +184,13 @@ def apply_state(gui, data: dict) -> None:
         except Exception:
             pass
         gui._on_unison_changed()
+
+    # 8) LPF key tracking.
+    lpf_kt = data.get("lpf_key_track")
+    if lpf_kt is not None:
+        enabled = bool(lpf_kt.get("enabled", True))
+        if enabled != gui._lpf_key_track_enabled:
+            gui._on_lpf_key_track_toggle()
 
 
 def _widget_value(widget):

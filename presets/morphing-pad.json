@@ -25,8 +25,7 @@
     "bc_wet": 0
   },
   "scales": {
-    "delay_time": 252,
-    "transpose": 1
+    "delay_time": 252
   },
   "wavetable": {
     "a": [
@@ -92,6 +91,13 @@
   "mono": {
     "enabled": false,
     "legato": 100
+  },
+  "unison": {
+    "voices": 1,
+    "detune": 0.0
+  },
+  "lpf_key_track": {
+    "enabled": true
   },
   "name": "morphing-pad"
 }

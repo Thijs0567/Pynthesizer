@@ -23,8 +23,7 @@
     "bc_wet": 0
   },
   "scales": {
-    "delay_time": 250,
-    "transpose": 0
+    "delay_time": 250
   },
   "wavetable": {
     "a": [
@@ -83,6 +82,17 @@
       }
     ],
     "routes": {}
+  },
+  "mono": {
+    "enabled": false,
+    "legato": 0
+  },
+  "unison": {
+    "voices": 1,
+    "detune": 0.0
+  },
+  "lpf_key_track": {
+    "enabled": true
   },
   "name": "default"
 }

@@ -2,27 +2,27 @@
   "schema_version": 1,
   "app": "PythonSynth",
   "knobs": {
-    "lpf_cutoff": 41,
-    "lpf_q": 1.5,
-    "volume": 70,
     "attack": 10,
-    "decay": 100,
-    "sustain": 70,
-    "release": 806,
-    "morph": 0,
-    "dist_drive": 15.5,
-    "dist_wet": 29,
-    "reverb_room": 50,
-    "reverb_damp": 50,
-    "reverb_wet": 0,
-    "delay_fb": 40,
-    "delay_wet": 0,
-    "chorus_rate": 30,
-    "chorus_depth": 50,
-    "chorus_wet": 0,
-    "bc_bits": 5,
-    "bc_ds": 26,
-    "bc_wet": 36
+    "decay": 65,
+    "sustain": 21,
+    "release": 58,
+    "morph": 14,
+    "lpf_cutoff": 69,
+    "lpf_q": 1.9000000000000001,
+    "volume": 70,
+    "dist_drive": 3.7,
+    "dist_wet": 50,
+    "reverb_room": 24,
+    "reverb_damp": 45,
+    "reverb_wet": 52,
+    "delay_fb": 35,
+    "delay_wet": 14,
+    "chorus_rate": 19,
+    "chorus_depth": 77,
+    "chorus_wet": 25,
+    "bc_bits": 11,
+    "bc_ds": 12,
+    "bc_wet": 19
   },
   "scales": {
     "delay_time": 250
@@ -30,21 +30,21 @@
   "wavetable": {
     "a": [
       1.0,
+      0.5,
       0.0,
-      -0.1111111119389534,
+      0.25,
       0.0,
-      0.03999999910593033,
+      0.1666666716337204,
       0.0,
-      -0.020408162847161293,
+      0.125,
       0.0,
-      0.012345679104328156,
+      0.10000000149011612,
       0.0,
-      -0.00826446246355772,
+      0.0833333358168602,
       0.0,
-      0.005917159840464592,
+      0.0714285746216774,
       0.0,
-      -0.004444444552063942,
-      0.0
+      0.0625
     ],
     "b": [
       1.0,
@@ -65,7 +65,7 @@
       0.0625
     ],
     "edit_slot": "A",
-    "morph": 0
+    "morph": 14
   },
   "lfo": {
     "selected": 0,
@@ -90,11 +90,11 @@
     "legato": 0
   },
   "unison": {
-    "voices": 1,
-    "detune": 0.0
+    "voices": 3,
+    "detune": 32.0
   },
   "lpf_key_track": {
     "enabled": true
   },
-  "name": "808-bass"
+  "name": "hard-pluck"
 }
