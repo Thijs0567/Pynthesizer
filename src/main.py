@@ -79,6 +79,7 @@ def main():
             on_bitcrusher_change=lambda bits, ds, wet: synth.set_bitcrusher(bits, ds, wet),
             on_panic=synth.panic,
             on_unison_change=lambda v, d: synth.set_unison(v, d),
+            on_lpf_key_track_change=lambda amt: synth.set_lpf_key_track(amt),
             lfo_bank=synth.lfo_bank,
         )
 

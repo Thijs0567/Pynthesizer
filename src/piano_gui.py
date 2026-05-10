@@ -48,6 +48,7 @@ class PianoGUI:
                  on_bitcrusher_change: Callable = None,
                  on_panic: Callable = None,
                  on_unison_change: Callable = None,
+                 on_lpf_key_track_change: Callable = None,
                  lfo_bank=None):
         """
         Initialize the piano GUI.
@@ -72,6 +73,7 @@ class PianoGUI:
         self.on_bitcrusher_change = on_bitcrusher_change or (lambda bits, ds, wet: None)
         self.on_panic = on_panic or (lambda: None)
         self.on_unison_change = on_unison_change or (lambda v, d: None)
+        self.on_lpf_key_track_change = on_lpf_key_track_change or (lambda amt: None)
 
         # LFO modulation bank (optional; no-op routing if absent).
         from src.lfo import LFOBank  # local import to avoid cycle concerns
@@ -509,8 +511,17 @@ class PianoGUI:
         tk.Label(section, text="LPF", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
-        # Spacer matching Master btn_row height (30px) + pady=(0,6) = 38px gap, same as Master
-        tk.Frame(section, bg=th.BG_PANEL, height=30).pack(padx=10, pady=(0, 6))
+        btn_row = tk.Frame(section, bg=th.BG_PANEL)
+        btn_row.pack(pady=(0, 6), padx=10)
+
+        self._lpf_key_track_enabled = False
+        self._lpf_key_track_btn = tk.Label(btn_row, text="KEY TRACK", font=th.FONT_LABEL_BOLD,
+                                           fg=th.TEXT_SECONDARY, bg=th.BG_INSET,
+                                           padx=8, pady=3, cursor='hand2',
+                                           highlightthickness=1,
+                                           highlightbackground=th.BORDER_SUBTLE)
+        self._lpf_key_track_btn.pack(side=tk.LEFT)
+        self._lpf_key_track_btn.bind('<Button-1>', lambda _: self._on_lpf_key_track_toggle())
 
         knob_row = tk.Frame(section, bg=th.BG_PANEL)
         knob_row.pack(padx=10, pady=(2, 10))
@@ -889,6 +900,14 @@ class PianoGUI:
         cutoff = 20.0 * (1000.0 ** t)  # log mapping: 20 Hz → 20000 Hz
         q = self._eff(self.lpf_q_scale, 'lpf_q')
         self.on_lpf_change(cutoff, q)
+
+    def _on_lpf_key_track_toggle(self):
+        self._lpf_key_track_enabled = not self._lpf_key_track_enabled
+        if self._lpf_key_track_enabled:
+            self._lpf_key_track_btn.config(bg=th.ACCENT, fg=th.TEXT_PRIMARY)
+        else:
+            self._lpf_key_track_btn.config(bg=th.BG_INSET, fg=th.TEXT_SECONDARY)
+        self.on_lpf_key_track_change(1.0 if self._lpf_key_track_enabled else 0.0)
 
     def _on_distortion_changed(self, _):
         self.on_distortion_change(

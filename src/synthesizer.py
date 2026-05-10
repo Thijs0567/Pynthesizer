@@ -86,6 +86,11 @@ class Synthesizer:
         self._lim_threshold = 0.90                                         # hard ceiling shown as red on meter
         self._lim_release_coef = np.exp(-1.0 / (0.050 * sample_rate))     # 50ms release
 
+        # Key-tracked per-voice-group filters
+        # amount: 0.0 = no tracking, 1.0 = full tracking (cutoff scales 1:1 with note freq)
+        self.lpf_key_track = 0.0
+        self._voice_filters: Dict[int, LowPassFilter] = {}  # note -> per-group LPF
+
         # Effects chain
         self._volume = MasterVolume(initial_volume=0.3)  # = 70% knob × (3/7)
         self._distortion = TubeDistortion(drive=1.0, wet=0.0)
@@ -126,6 +131,26 @@ class Synthesizer:
     def set_lpf(self, cutoff_hz: float, q: float) -> None:
         self._lpf.set_cutoff(cutoff_hz)
         self._lpf.set_q(q)
+        for vf in self._voice_filters.values():
+            vf.set_q(q)
+
+    def set_lpf_key_track(self, amount: float) -> None:
+        """amount: 0.0 (off) to 1.0 (full key tracking). Updates all active voice filters."""
+        self.lpf_key_track = max(0.0, min(1.0, float(amount)))
+        for note, vf in self._voice_filters.items():
+            vf.set_cutoff(self._key_tracked_cutoff(note))
+
+    def _key_tracked_cutoff(self, note: int) -> float:
+        """Blend master cutoff with note frequency scaled to cutoff range."""
+        if self.lpf_key_track == 0.0:
+            return self._lpf._cutoff
+        # C4 (MIDI 60) is the tracking centre: notes above open the filter, below close it.
+        note_freq = self.note_to_frequency(note)
+        centre_freq = self.note_to_frequency(60)
+        ratio = note_freq / centre_freq
+        # Scale master cutoff by the ratio, blended by key_track amount
+        tracked = self._lpf._cutoff * (ratio ** self.lpf_key_track)
+        return max(20.0, min(tracked, self.sample_rate * 0.4999))
 
     def set_reverb(self, room_size: float, damping: float, wet: float) -> None:
         self._reverb.set_room_size(room_size)
@@ -213,6 +238,12 @@ class Synthesizer:
             ]
             self.voice_creation_counter += 1
             self.active_voices[note] = voices
+            self._voice_filters[note] = self._make_voice_filter(note)
+
+    def _make_voice_filter(self, note: int) -> LowPassFilter:
+        vf = LowPassFilter(self.sample_rate, cutoff_hz=self._key_tracked_cutoff(note),
+                           q=self._lpf._q)
+        return vf
 
     def _mono_note_on(self, note: int, velocity: int) -> None:
         base_freq = self.note_to_frequency(note)
@@ -232,6 +263,7 @@ class Synthesizer:
                 voice.velocity = velocity
             # Re-key under the new note
             self.active_voices = {note: voices}
+            self._voice_filters = {note: self._make_voice_filter(note)}
         else:
             voices = [
                 Voice(self.sample_rate, f, velocity,
@@ -242,6 +274,7 @@ class Synthesizer:
             ]
             self.voice_creation_counter += 1
             self.active_voices = {note: voices}
+            self._voice_filters = {note: self._make_voice_filter(note)}
 
     def _on_note_off(self, note: int):
         """Handle MIDI note off event."""
@@ -273,6 +306,7 @@ class Synthesizer:
     def panic(self):
         """Immediately silence all voices and flush effect tails."""
         self.active_voices.clear()
+        self._voice_filters.clear()
         self._lpf.reset_state()
         self._reverb.reset_state()
         self._delay.reset_state()
@@ -400,16 +434,20 @@ class Synthesizer:
                     if samples is not None and len(samples) == num_samples:
                         group_buf += samples
                 group_buf /= len(voices)
+                # Key-tracked per-note filter (bypassed when key_track == 0)
+                if self.lpf_key_track > 0.0 and note in self._voice_filters:
+                    group_buf = self._voice_filters[note].process(group_buf).astype(np.float32)
                 output += group_buf
                 env_sum += voices[0]._get_envelope_value()
             except Exception as e:
                 print(f"Error generating voice samples for note {note}: {type(e).__name__}: {e}")
                 notes_to_remove.append(note)
 
-        # Remove inactive voices
+        # Remove inactive voices and their per-group filters
         for note in notes_to_remove:
             if note in self.active_voices:
                 del self.active_voices[note]
+            self._voice_filters.pop(note, None)
 
         # Envelope-weighted √-scaling: normalise by √(sum of envelope amplitudes)
         # so the gain tracks actual loudness rather than raw voice count.

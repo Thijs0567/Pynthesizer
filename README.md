@@ -15,7 +15,7 @@ MIDI input is opened automatically if a device is connected. The GUI always laun
 
 - **Clickable Piano**: 3 octaves + 1 key (C4–C7), click or drag to play
 - **QWERTY Keyboard**: Play notes from your computer keyboard
-- **Polyphony**: Up to 16 simultaneous voices
+- **Polyphony**: Up to 96 simultaneous voices
 - **Mono Mode**: Toggle button switches to single-voice mode with true legato (envelope continues across note changes) and portamento glide
 - **Visual Feedback**: Keys highlight when pressed (mouse, keyboard, and MIDI); panic button clears all highlights
 - **Voice Counter**: Real-time display of active voices
@@ -74,7 +74,7 @@ Each note plays through the wavetable oscillator with:
   - **Reverb**: Freeverb-based with room size, damping, and wet/dry mix
   - **Delay**: Configurable time, feedback, and wet/dry mix
   - **Bitcrusher**: Bit-depth reduction (1–24 bits) + sample-rate reduction via sample-and-hold downsampling (factor 1–32); wet/dry mix
-  - **Low-Pass Filter**: Variable cutoff and Q (resonance)
+  - **Low-Pass Filter**: Variable cutoff and Q (resonance); **Key Track** toggle scales each note's filter cutoff proportionally to its frequency (centred on C4), so higher notes stay open and lower notes close more — the same effect as key tracking in Serum
   - **Chorus**: Stereo LFO-modulated delay (L/R phases offset by 180°); rate 0.05–8 Hz, depth, and wet/dry mix (mono → stereo)
 - **Master Volume**: knob range mapped to 0–43% linear; defaults to 70% knob (0.3 linear) for comfortable headroom
 - **Portamento**: knob in the Master section; only active in mono mode; 0% = instant, 100% = 2 s glide
@@ -112,7 +112,7 @@ LFO Bank (3 × sine LFO) → knob routing → modulates assignable parameters ea
 ## Configuration & API
 
 ```python
-synth = Synthesizer(sample_rate=44100, max_voices=16)
+synth = Synthesizer(sample_rate=44100, max_voices=96)
 
 synth.set_adsr(attack=0.01, decay=0.1, sustain=0.7, release=0.3)
 synth.set_volume(0.8)
@@ -124,6 +124,7 @@ synth.set_wavetable(np.array([1.0, 0.5, 0.0, ...], dtype=np.float32))  # 16 harm
 synth.set_mono_mode(True)          # enable mono/legato mode
 synth.set_portamento(0.5)          # 0.0–1.0 → 0–2 s glide time
 synth.set_unison(4, 20.0)          # 4 sub-voices, 20 cents total spread (0–100 ct)
+synth.set_lpf_key_track(1.0)      # 0.0 = off, 1.0 = full key tracking
 ```
 
 **Compressor Settings** (tweak in `src/synthesizer.py`):
