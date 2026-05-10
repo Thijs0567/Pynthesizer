@@ -53,6 +53,11 @@ class Synthesizer:
         self.pitch_bend_amount = 0  # -8192 to 8191
         self.pitch_bend_range = 2  # semitones
 
+        # Mono mode
+        self.mono_mode = False
+        self.legato = 0.0           # 0.0 = always retrigger, 1.0 = true legato
+        self._mono_note_stack = []  # held MIDI notes in press order (last = highest priority)
+
         # Smoothed envelope-weight sum for √N polyphony scaling
         self._mix_scale = 1.0
 
@@ -149,8 +154,19 @@ class Synthesizer:
         for voice in list(self.active_voices.values()):
             voice.wavetable = wt
 
+    def set_mono_mode(self, enabled: bool) -> None:
+        self.mono_mode = enabled
+        if not enabled:
+            self._mono_note_stack.clear()
+
+    def set_legato(self, value: float) -> None:
+        self.legato = max(0.0, min(1.0, value))
+
     def _on_note_on(self, note: int, velocity: int):
         """Handle MIDI note on event."""
+        if self.mono_mode:
+            self._mono_note_on(note, velocity)
+            return
         if note in self.active_voices:
             voice = self.active_voices[note]
             # Save envelope level so the attack restarts from here, not from 0.
@@ -167,7 +183,7 @@ class Synthesizer:
                 oldest_note = min(self.active_voices.keys(),
                                 key=lambda n: self.active_voices[n].creation_time)
                 del self.active_voices[oldest_note]
-            
+
             # Create new voice
             frequency = self.note_to_frequency(note)
             voice = Voice(self.sample_rate, frequency, velocity,
@@ -176,11 +192,59 @@ class Synthesizer:
                         wavetable=self._wavetable)
             self.voice_creation_counter += 1
             self.active_voices[note] = voice
-    
+
+    def _mono_note_on(self, note: int, velocity: int) -> None:
+        freq = self.note_to_frequency(note)
+        if note not in self._mono_note_stack:
+            self._mono_note_stack.append(note)
+        if self.active_voices:
+            voice = next(iter(self.active_voices.values()))
+            voice.set_frequency(freq)   # phase uninterrupted — no click
+            if self.legato < 0.5:
+                # Retrigger: attack ramps from current envelope level (handles
+                # release phase too — _get_envelope_value returns release amplitude).
+                voice.retrigger(velocity)
+            else:
+                # True legato: don't restart envelope. But if releasing, rescue
+                # the voice from silence by resuming attack from the release level.
+                if voice.is_releasing:
+                    voice._retrigger_level = voice._get_envelope_value()
+                    voice.is_releasing = False
+                    voice.time = 0.0
+                voice.velocity = velocity
+            self.active_voices = {note: voice}
+        else:
+            voice = Voice(self.sample_rate, freq, velocity,
+                          self.attack, self.decay, self.sustain, self.release,
+                          creation_time=self.voice_creation_counter,
+                          wavetable=self._wavetable)
+            self.voice_creation_counter += 1
+            self.active_voices = {note: voice}
+
     def _on_note_off(self, note: int):
         """Handle MIDI note off event."""
+        if self.mono_mode:
+            self._mono_note_off(note)
+            return
         if note in self.active_voices:
             self.active_voices[note].note_off()
+
+    def _mono_note_off(self, note: int) -> None:
+        if note in self._mono_note_stack:
+            self._mono_note_stack.remove(note)
+        if self._mono_note_stack:
+            # Resume the most recently pressed still-held note.
+            prev_note = self._mono_note_stack[-1]
+            freq = self.note_to_frequency(prev_note)
+            if self.active_voices:
+                voice = next(iter(self.active_voices.values()))
+                voice.set_frequency(freq)
+                if self.legato < 0.5:
+                    voice.retrigger(127)
+                self.active_voices = {prev_note: voice}
+        else:
+            if self.active_voices:
+                next(iter(self.active_voices.values())).note_off()
 
     def panic(self):
         """Immediately silence all voices and flush effect tails."""

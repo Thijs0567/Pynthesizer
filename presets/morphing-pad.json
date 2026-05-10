@@ -9,7 +9,9 @@
     "decay": 100,
     "sustain": 70,
     "release": 300,
-    "morph": 16,
+    "morph": 15,
+    "dist_drive": 15.5,
+    "dist_wet": 29,
     "reverb_room": 14,
     "reverb_damp": 72,
     "reverb_wet": 23,
@@ -64,7 +66,7 @@
       0.0625
     ],
     "edit_slot": "A",
-    "morph": 0
+    "morph": 13
   },
   "lfo": {
     "selected": 1,
@@ -86,6 +88,10 @@
       "morph": 0,
       "lpf_cutoff": 1
     }
+  },
+  "mono": {
+    "enabled": false,
+    "legato": 100
   },
   "name": "morphing-pad"
 }

@@ -81,6 +81,10 @@ def main():
             lfo_bank=synth.lfo_bank,
         )
 
+        # Wire mono/legato callbacks
+        piano._on_mono_change = synth.set_mono_mode
+        piano._on_legato_change = synth.set_legato
+
         # Re-wire MIDI callbacks through the GUI so keys highlight on MIDI input
         synth.midi_handler.on_note_on = piano.midi_note_on
         synth.midi_handler.on_note_off = piano.midi_note_off

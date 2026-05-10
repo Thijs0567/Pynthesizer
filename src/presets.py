@@ -50,6 +50,11 @@ def capture_state(gui) -> dict:
         "routes": {kid: int(idx) for kid, idx in gui.lfo_bank.routes.items()},
     }
 
+    mono = {
+        "enabled": bool(gui._mono_enabled),
+        "legato": int(gui.legato_knob.get()),
+    }
+
     return {
         "schema_version": SCHEMA_VERSION,
         "app": APP_NAME,
@@ -57,6 +62,7 @@ def capture_state(gui) -> dict:
         "scales": scales,
         "wavetable": wavetable,
         "lfo": lfo,
+        "mono": mono,
     }
 
 
@@ -143,6 +149,18 @@ def apply_state(gui, data: dict) -> None:
             for kid, idx in routes.items():
                 if kid in gui._assignable and isinstance(idx, int):
                     gui.lfo_bank.assign(kid, idx)
+
+    # 6) Mono mode / legato.
+    mono = data.get("mono")
+    if mono is not None:
+        legato_val = mono.get("legato", 0)
+        try:
+            gui.legato_knob.set(int(legato_val))
+        except Exception:
+            pass
+        enabled = bool(mono.get("enabled", False))
+        if enabled != gui._mono_enabled:
+            gui._on_mono_toggle()
 
 
 def _widget_value(widget):

@@ -105,6 +105,9 @@ class PianoGUI:
         # Transpose state (semitones, applied before note callbacks)
         self.transpose = 0
 
+        # Mono mode state
+        self._mono_enabled = False
+
         # Gain meter state (smoothed)
         self.current_level = 0.0
         self.peak_level = 0.0
@@ -113,7 +116,7 @@ class PianoGUI:
         
         # Setup window
         self.root.title("PythonSynth")
-        self.root.geometry("1260x940")
+        self.root.geometry("1440x1080")
         self.root.resizable(False, False)
         self.root.configure(bg=th.BG_ROOT)
 
@@ -121,39 +124,32 @@ class PianoGUI:
 
         # Title
         title_frame = tk.Frame(root, bg=th.BG_ROOT)
-        title_frame.pack(pady=(14, 8))
+        title_frame.pack(pady=(12, 6))
         tk.Label(title_frame, text="PythonSynth", font=th.FONT_TITLE,
                 fg=th.TEXT_PRIMARY, bg=th.BG_ROOT).pack()
         # Accent underline echoes the piano bezel
         tk.Frame(title_frame, bg=th.ACCENT, height=2, width=160).pack(pady=(2, 0))
 
-        # Row 1: [ADSR + Osc centered] [LPF + Master right-aligned]
+        # Row 1: all panels in one centered strip so they share the same height
         row1 = tk.Frame(root, bg=th.BG_ROOT)
-        row1.pack(pady=(6, 2), padx=10, fill=tk.X)
+        row1.pack(pady=(6, 2), padx=10)
 
-        row1_right = tk.Frame(row1, bg=th.BG_ROOT)
-        row1_right.pack(side=tk.RIGHT, padx=4, fill=tk.Y)
-        row1_right_inner = tk.Frame(row1_right, bg=th.BG_ROOT)
-        row1_right_inner.pack(anchor='e', fill=tk.Y, expand=True)
-        self._create_lfo_controls(row1_right_inner)
-        self._create_filter_controls(row1_right_inner)
-        self._create_master_section(row1_right_inner)
-
-        row1_center = tk.Frame(row1, bg=th.BG_ROOT)
-        row1_center.pack(side=tk.LEFT, expand=True)
-        row1_inner = tk.Frame(row1_center, bg=th.BG_ROOT)
+        row1_inner = tk.Frame(row1, bg=th.BG_ROOT)
         row1_inner.pack(anchor='center')
         self._create_adsr_controls(row1_inner)
         self._create_oscillator_controls(row1_inner)
+        self._create_lfo_controls(row1_inner)
+        self._create_filter_controls(row1_inner)
+        self._create_master_section(row1_inner)
 
         # Row 2: Effects (centered)
         row2 = tk.Frame(root, bg=th.BG_ROOT)
-        row2.pack(pady=(2, 6), padx=10)
+        row2.pack(pady=(2, 4), padx=10)
         self._create_effects_controls(row2)
 
         # Row 3: Piano + Transpose (centered)
         piano_outer = tk.Frame(root, bg=th.BG_ROOT)
-        piano_outer.pack(pady=(6, 4), fill=tk.X)
+        piano_outer.pack(pady=(6, 6), fill=tk.X)
 
         piano_center = tk.Frame(piano_outer, bg=th.BG_ROOT)
         piano_center.pack(anchor='center')
@@ -174,7 +170,7 @@ class PianoGUI:
 
         self.canvas = Canvas(bezel_inner, bg=th.BG_INSET, highlightthickness=0,
                            width=canvas_width, height=220)
-        self.canvas.pack(padx=10, pady=10)
+        self.canvas.pack(padx=8, pady=8)
 
         self.canvas.bind('<Button-1>', self._on_mouse_down)
         self.canvas.bind('<ButtonRelease-1>', self._on_mouse_up)
@@ -186,7 +182,7 @@ class PianoGUI:
         self._draw_kb_labels()
 
         info_frame = tk.Frame(piano_center, bg=th.BG_ROOT)
-        info_frame.pack(pady=(8, 2))
+        info_frame.pack(pady=(8, 4))
         self.info_label = tk.Label(info_frame, text="Active voices: 0",
                                    font=th.FONT_LABEL, fg=th.ACCENT, bg=th.BG_ROOT)
         self.info_label.pack()
@@ -306,7 +302,7 @@ class PianoGUI:
         """ADSR envelope section: 4 knobs on top, envelope graph below."""
         section = tk.Frame(parent, bg=th.BG_PANEL,
                            highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
-        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.BOTH, expand=True)
 
         tk.Label(section, text="ADSR Envelope", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
@@ -348,8 +344,8 @@ class PianoGUI:
 
         self.envelope_canvas = Canvas(section, bg=th.BG_INSET, highlightthickness=1,
                                       highlightbackground=th.BORDER_SUBTLE,
-                                      width=300, height=100)
-        self.envelope_canvas.pack(padx=10, pady=(2, 10))
+                                      width=320, height=140)
+        self.envelope_canvas.pack(padx=10, pady=(2, 10), fill=tk.BOTH, expand=True)
 
         self.envelope_canvas.bind('<Configure>', lambda _: self._draw_envelope())
 
@@ -358,12 +354,9 @@ class PianoGUI:
         return max(0, min(127, raw_note + self.transpose))
 
     def _create_transpose_slider(self, parent: tk.Frame):
-        # Accent left-edge echoes the piano bezel
-        wrapper = tk.Frame(parent, bg=th.ACCENT)
-        wrapper.pack(side=tk.LEFT, padx=(0, 6), pady=10, fill=tk.Y)
-        frame = tk.Frame(wrapper, bg=th.BG_PANEL,
+        frame = tk.Frame(parent, bg=th.BG_PANEL,
                          highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
-        frame.pack(side=tk.LEFT, padx=(2, 0), pady=0, fill=tk.Y)
+        frame.pack(side=tk.LEFT, padx=(0, 6), pady=2, fill=tk.Y)
 
         tk.Label(frame, text="Transpose", font=th.FONT_SUBGROUP,
                  fg=th.ACCENT_MUTED, bg=th.BG_PANEL).pack(pady=(6, 2))
@@ -409,14 +402,14 @@ class PianoGUI:
         """LFO panel: dropdown selecting 1 of 3 LFOs, with rate + amount knobs."""
         section = tk.Frame(parent, bg=th.BG_PANEL,
                            highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
-        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.BOTH, expand=True)
 
         tk.Label(section, text="LFO", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
         # Dropdown — OptionMenu (ttk.Combobox would look nicer but needs ttk styling).
         select_row = tk.Frame(section, bg=th.BG_PANEL)
-        select_row.pack(padx=10, pady=(0, 4))
+        select_row.pack(padx=10, pady=(0, 13))
         self._lfo_select_var = tk.StringVar(value="LFO 1")
         opts = ["LFO 1", "LFO 2", "LFO 3"]
         om = tk.OptionMenu(select_row, self._lfo_select_var, *opts,
@@ -491,10 +484,13 @@ class PianoGUI:
         """Low-pass filter section: Cutoff + Q as knobs."""
         section = tk.Frame(parent, bg=th.BG_PANEL,
                            highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
-        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.BOTH, expand=True)
 
         tk.Label(section, text="LPF", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
+
+        # Spacer matching Master btn_row height (30px) + pady=(0,6) = 38px gap, same as Master
+        tk.Frame(section, bg=th.BG_PANEL, height=30).pack(padx=10, pady=(0, 6))
 
         knob_row = tk.Frame(section, bg=th.BG_PANEL)
         knob_row.pack(padx=10, pady=(2, 10))
@@ -673,24 +669,47 @@ class PianoGUI:
 
         section = tk.Frame(parent, bg=th.BG_PANEL,
                            highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
-        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.BOTH, expand=True)
 
         tk.Label(section, text="Master", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
 
-        tk.Button(section, text="PANIC", font=th.FONT_LABEL_BOLD,
-                  fg=th.TEXT_PRIMARY, bg=th.DANGER, activebackground=th.DANGER_ACTIVE,
-                  relief=tk.FLAT, bd=0, padx=10, pady=3,
-                  command=self._on_panic).pack(pady=(0, 6))
+        # PANIC + MONO side by side
+        btn_row = tk.Frame(section, bg=th.BG_PANEL)
+        btn_row.pack(pady=(0, 6), padx=10)
 
-        self.volume_scale = Knob(section, from_=0, to=100, resolution=1,
+        tk.Button(btn_row, text="PANIC", font=th.FONT_LABEL_BOLD,
+                  fg=th.TEXT_PRIMARY, bg=th.DANGER, activebackground=th.DANGER_ACTIVE,
+                  relief=tk.FLAT, bd=0, padx=8, pady=3,
+                  command=self._on_panic).pack(side=tk.LEFT, padx=(0, 4))
+
+        self._mono_btn = tk.Label(btn_row, text="MONO", font=th.FONT_LABEL_BOLD,
+                                  fg=th.TEXT_SECONDARY, bg=th.BG_INSET,
+                                  padx=8, pady=3, cursor='hand2',
+                                  highlightthickness=1, highlightbackground=th.BORDER_SUBTLE)
+        self._mono_btn.pack(side=tk.LEFT)
+        self._mono_btn.bind('<Button-1>', lambda _: self._on_mono_toggle())
+
+        # Volume + Legato knobs stacked vertically (mirrors LFO Rate/Amount layout)
+        knob_row = tk.Frame(section, bg=th.BG_PANEL)
+        knob_row.pack(padx=10, pady=(2, 4))
+
+        self.volume_scale = Knob(knob_row, from_=0, to=100, resolution=1,
                                  label="Volume", value_format="{:.0f}%",
-                                 size=56, initial=70,
+                                 initial=70,
                                  command=self._on_volume_changed)
         self.volume_scale.set(70)
-        self.volume_scale.pack(pady=(0, 4))
+        self.volume_scale.grid(row=0, column=0, padx=6, pady=4)
         self._register_assignable('volume', self.volume_scale, self._on_volume_changed)
         self._on_volume_changed(None)
+
+        # Legato knob (only meaningful in mono mode)
+        self.legato_knob = Knob(knob_row, from_=0, to=100, resolution=1,
+                                label="Legato", value_format="{:.0f}%",
+                                initial=0,
+                                command=self._on_legato_changed)
+        self.legato_knob.set(0)
+        self.legato_knob.grid(row=1, column=0, padx=6, pady=4)
 
         self.gain_canvas = Canvas(section, bg=th.BG_INSET, highlightthickness=1,
                                   highlightbackground=th.BORDER_SUBTLE,
@@ -742,6 +761,19 @@ class PianoGUI:
         self.active_keys.clear()
         self.mouse_down_note = None
         self._kb_held.clear()
+
+    def _on_mono_toggle(self):
+        self._mono_enabled = not self._mono_enabled
+        if self._mono_enabled:
+            self._mono_btn.config(bg=th.ACCENT, fg=th.TEXT_PRIMARY)
+        else:
+            self._mono_btn.config(bg=th.BG_INSET, fg=th.TEXT_SECONDARY)
+        if hasattr(self, '_on_mono_change'):
+            self._on_mono_change(self._mono_enabled)
+
+    def _on_legato_changed(self, _=None):
+        if hasattr(self, '_on_legato_change'):
+            self._on_legato_change(self.legato_knob.get() / 100.0)
 
     # ── LFO routing helpers ──────────────────────────────────────────────
 
@@ -1082,7 +1114,7 @@ class PianoGUI:
         """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
         section = tk.Frame(parent, bg=th.BG_PANEL,
                            highlightbackground=th.BORDER_SUBTLE, highlightthickness=1)
-        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.Y)
+        section.pack(side=tk.LEFT, padx=8, pady=6, fill=tk.BOTH, expand=True)
 
         tk.Label(section, text="Oscillator", font=th.FONT_SECTION,
                  fg=th.ACCENT, bg=th.BG_PANEL).pack(pady=(8, 4), padx=10, anchor='w')
@@ -1110,13 +1142,13 @@ class PianoGUI:
             self._preset_btn_canvases[name] = c
 
         graph_row = tk.Frame(section, bg=th.BG_PANEL)
-        graph_row.pack(padx=10, pady=(4, 6), fill=tk.X)
+        graph_row.pack(padx=10, pady=(4, 6), fill=tk.BOTH, expand=True)
 
         self.waveform_canvas = tk.Canvas(
             graph_row, bg=th.BG_INSET, highlightthickness=1,
-            highlightbackground=th.BORDER_SUBTLE, width=320, height=80,
+            highlightbackground=th.BORDER_SUBTLE, width=380, height=120,
         )
-        self.waveform_canvas.pack(side=tk.LEFT)
+        self.waveform_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # A/B slot-select buttons placed inside the bottom-left of the canvas.
         self._ab_buttons = {}
