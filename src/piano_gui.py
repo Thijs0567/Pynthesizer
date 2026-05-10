@@ -1157,10 +1157,14 @@ class PianoGUI:
 
     def _show_unison_overlay(self):
         self._unison_overlay_active = True
+        for lbl in getattr(self, '_ab_buttons', {}).values():
+            lbl.place_forget()
         self._draw_unison_overlay()
 
     def _hide_unison_overlay(self):
         self._unison_overlay_active = False
+        for i, lbl in enumerate(getattr(self, '_ab_buttons', {}).values()):
+            lbl.place(in_=self.waveform_canvas, x=6 + i * 32, rely=1.0, y=-6, anchor='sw')
         self._draw_waveform()
 
     def _draw_unison_overlay(self):
@@ -1204,9 +1208,6 @@ class PianoGUI:
 
         x0 = ct_to_x(0.0)
         c.create_line(x0, mid_y - 6, x0, mid_y + 6, fill=th.ACCENT_MUTED, width=1)
-
-        for lbl in getattr(self, '_ab_buttons', {}).values():
-            lbl.lift()
 
     def _create_oscillator_controls(self, parent):
         """Wavetable oscillator section: waveform preview + 16 harmonic sliders."""
