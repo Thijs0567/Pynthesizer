@@ -55,7 +55,7 @@ class Synthesizer:
 
         # Mono mode
         self.mono_mode = False
-        self.legato = 0.0           # 0.0 = always retrigger, 1.0 = true legato
+        self.portamento_time = 0.0  # seconds; 0 = instant (no glide)
         self._mono_note_stack = []  # held MIDI notes in press order (last = highest priority)
 
         # Smoothed envelope-weight sum for √N polyphony scaling
@@ -159,8 +159,9 @@ class Synthesizer:
         if not enabled:
             self._mono_note_stack.clear()
 
-    def set_legato(self, value: float) -> None:
-        self.legato = max(0.0, min(1.0, value))
+    def set_portamento(self, value: float) -> None:
+        """value: 0.0–1.0 mapped to 0–2 seconds glide time."""
+        self.portamento_time = max(0.0, min(1.0, value)) * 2.0
 
     def _on_note_on(self, note: int, velocity: int):
         """Handle MIDI note on event."""
@@ -199,19 +200,14 @@ class Synthesizer:
             self._mono_note_stack.append(note)
         if self.active_voices:
             voice = next(iter(self.active_voices.values()))
-            voice.set_frequency(freq)   # phase uninterrupted — no click
-            if self.legato < 0.5:
-                # Retrigger: attack ramps from current envelope level (handles
-                # release phase too — _get_envelope_value returns release amplitude).
-                voice.retrigger(velocity)
-            else:
-                # True legato: don't restart envelope. But if releasing, rescue
-                # the voice from silence by resuming attack from the release level.
-                if voice.is_releasing:
-                    voice._retrigger_level = voice._get_envelope_value()
-                    voice.is_releasing = False
-                    voice.time = 0.0
-                voice.velocity = velocity
+            voice.start_glide(freq, self.portamento_time)
+            # Always true legato: envelope continues uninterrupted.
+            # If voice is in release, rescue it back into sustain.
+            if voice.is_releasing:
+                voice._retrigger_level = voice._get_envelope_value()
+                voice.is_releasing = False
+                voice.time = 0.0
+            voice.velocity = velocity
             self.active_voices = {note: voice}
         else:
             voice = Voice(self.sample_rate, freq, velocity,
@@ -238,9 +234,7 @@ class Synthesizer:
             freq = self.note_to_frequency(prev_note)
             if self.active_voices:
                 voice = next(iter(self.active_voices.values()))
-                voice.set_frequency(freq)
-                if self.legato < 0.5:
-                    voice.retrigger(127)
+                voice.start_glide(freq, self.portamento_time)
                 self.active_voices = {prev_note: voice}
         else:
             if self.active_voices:

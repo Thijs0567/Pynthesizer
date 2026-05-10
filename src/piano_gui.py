@@ -703,9 +703,9 @@ class PianoGUI:
         self._register_assignable('volume', self.volume_scale, self._on_volume_changed)
         self._on_volume_changed(None)
 
-        # Legato knob (only meaningful in mono mode)
+        # Portamento knob (only meaningful in mono mode)
         self.legato_knob = Knob(knob_row, from_=0, to=100, resolution=1,
-                                label="Legato", value_format="{:.0f}%",
+                                label="Portamento", value_format="{:.0f}%",
                                 initial=0,
                                 command=self._on_legato_changed)
         self.legato_knob.set(0)

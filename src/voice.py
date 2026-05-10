@@ -34,8 +34,27 @@ class Voice:
         self.wavetable = wavetable if wavetable is not None else _DEFAULT_WAVETABLE.copy()
         self._osc_buf = np.zeros(4096, dtype=np.float64)
 
+        # Portamento glide state
+        self._glide_target = frequency   # Hz
+        self._glide_rate = 0.0           # semitones per sample (0 = instant)
+
     def set_frequency(self, frequency: float):
         self.frequency = max(20.0, min(20000.0, frequency))
+        self._glide_target = self.frequency
+        self._glide_rate = 0.0
+
+    def start_glide(self, target_freq: float, glide_time: float):
+        """Glide to target_freq over glide_time seconds (0 = instant)."""
+        target_freq = max(20.0, min(20000.0, target_freq))
+        if glide_time <= 0.0 or self.frequency <= 0.0:
+            self.frequency = target_freq
+            self._glide_target = target_freq
+            self._glide_rate = 0.0
+            return
+        semitones = 12.0 * np.log2(target_freq / self.frequency)
+        self._glide_target = target_freq
+        # rate in semitones/sample — sign carries direction
+        self._glide_rate = semitones / (glide_time * self.sample_rate)
 
     def note_off(self):
         self._release_start_level = self._get_envelope_value()
@@ -77,9 +96,29 @@ class Voice:
         indices = np.arange(num_samples, dtype=np.float64)
 
         # ── Oscillator ────────────────────────────────────────────────────────
-        phase_inc = 2.0 * np.pi * self.frequency / self.sample_rate
-        phases = self.phase + indices * phase_inc
-        self.phase = (phases[-1] + phase_inc) % (2.0 * np.pi)
+        if self._glide_rate != 0.0:
+            # Accumulate phase with per-sample gliding frequency
+            log_start = np.log2(self.frequency)
+            log_target = np.log2(self._glide_target)
+            log_steps = log_start + self._glide_rate / np.log2(np.e) * np.arange(num_samples)
+            # clamp to target so we don't overshoot
+            if self._glide_rate > 0:
+                log_steps = np.minimum(log_steps, log_target)
+            else:
+                log_steps = np.maximum(log_steps, log_target)
+            freqs = 2.0 ** log_steps
+            phase_incs = 2.0 * np.pi * freqs / self.sample_rate
+            phases = self.phase + np.cumsum(phase_incs) - phase_incs[0]
+            self.phase = (phases[-1] + phase_incs[-1]) % (2.0 * np.pi)
+            self.frequency = float(freqs[-1])
+            if (self._glide_rate > 0 and self.frequency >= self._glide_target) or \
+               (self._glide_rate < 0 and self.frequency <= self._glide_target):
+                self.frequency = self._glide_target
+                self._glide_rate = 0.0
+        else:
+            phase_inc = 2.0 * np.pi * self.frequency / self.sample_rate
+            phases = self.phase + indices * phase_inc
+            self.phase = (phases[-1] + phase_inc) % (2.0 * np.pi)
         amplitude = max(0.0, min(1.0, self.velocity / 127.0))
 
         wt = self.wavetable
