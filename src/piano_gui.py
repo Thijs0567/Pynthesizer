@@ -17,10 +17,10 @@ class PianoGUI:
     """A simple clickable piano interface with ADSR controls."""
     
     # Piano key properties
-    WHITE_KEY_WIDTH = 50
-    WHITE_KEY_HEIGHT = 200
-    BLACK_KEY_WIDTH = 32
-    BLACK_KEY_HEIGHT = 130
+    WHITE_KEY_WIDTH = 26
+    WHITE_KEY_HEIGHT = 120
+    BLACK_KEY_WIDTH = 16
+    BLACK_KEY_HEIGHT = 76
     
     # Standard piano layout
     WHITE_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
@@ -28,9 +28,13 @@ class PianoGUI:
         'C#': 0, 'D#': 1, 'F#': 3, 'G#': 4, 'A#': 5,
     }
     
-    # Piano range: 2 octaves (C4 to C6)
-    START_OCTAVE = 4
-    END_OCTAVE = 6
+    # 88-key range: A0 (MIDI 21) to C8 (MIDI 108)
+    # Note: this codebase uses octave*12 for C, so C4=48 (not standard 60).
+    # A0 = octave 1 note 9 = 21; C8 = octave 9 note 0 = 108.
+    START_OCTAVE = 1
+    END_OCTAVE = 8
+    FIRST_NOTE = 21   # A0
+    LAST_NOTE = 108   # C8
     
     def __init__(self, root: tk.Tk, on_note_on: Callable, on_note_off: Callable,
                  on_adsr_change: Callable = None,
@@ -122,7 +126,13 @@ class PianoGUI:
         self.root.resizable(False, False)
         self.root.configure(bg=th.BG_ROOT)
 
-        num_white_keys = (self.END_OCTAVE - self.START_OCTAVE + 1) * 7 + 1
+        # Count white keys in the FIRST_NOTE..LAST_NOTE range (88-key = 52 white keys)
+        _white_offsets = [0, 2, 4, 5, 7, 9, 11]
+        num_white_keys = sum(
+            1 for oct in range(self.START_OCTAVE, self.END_OCTAVE + 2)
+            for off in (_white_offsets if oct <= self.END_OCTAVE else [0])
+            if self.FIRST_NOTE <= oct * 12 + off <= self.LAST_NOTE
+        )
 
         # Title
         title_frame = tk.Frame(root, bg=th.BG_ROOT)
@@ -171,7 +181,7 @@ class PianoGUI:
         bezel_inner.pack(padx=1, pady=1)
 
         self.canvas = Canvas(bezel_inner, bg=th.BG_INSET, highlightthickness=0,
-                           width=canvas_width, height=220)
+                           width=canvas_width, height=140)
         self.canvas.pack(padx=8, pady=8)
 
         self.canvas.bind('<Button-1>', self._on_mouse_down)
@@ -179,7 +189,7 @@ class PianoGUI:
         self.canvas.bind('<Motion>', self._on_mouse_motion)
 
         self._draw_piano()
-        self._draw_piano_jewelry(canvas_width, 220)
+        self._draw_piano_jewelry(canvas_width, 140)
         self._bind_keyboard()
         self._draw_kb_labels()
 
@@ -199,7 +209,7 @@ class PianoGUI:
     _KB_LABELS = {k: k.upper() for k in {**_KB_WHITE, **_KB_BLACK}}
 
     def _bind_keyboard(self):
-        self.kb_octave = self.START_OCTAVE + 1  # default: C5, centered on 3-octave layout
+        self.kb_octave = 4  # default: C4, near middle of 88-key range
         self._kb_held: set = set()          # keys currently held down
 
         self.root.bind('<KeyPress>',   self._on_key_press)
@@ -209,7 +219,7 @@ class PianoGUI:
     def _kb_shift(self, direction: int):
         """Shift kb_octave by direction (±1). If at limit, transpose by ±12 instead."""
         new_oct = self.kb_octave + direction
-        if self.START_OCTAVE <= new_oct <= self.END_OCTAVE:
+        if self.START_OCTAVE <= new_oct <= self.END_OCTAVE - 1:
             self.kb_octave = new_oct
             self._draw_kb_labels()
         else:
@@ -268,22 +278,27 @@ class PianoGUI:
         for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
             for wi in range(len(self.WHITE_KEYS)):
                 midi_note = octave * 12 + white_midi_offsets[wi]
+                if midi_note < self.FIRST_NOTE or midi_note > self.LAST_NOTE:
+                    continue
                 cx = x_pos + self.WHITE_KEY_WIDTH // 2
-                cy = 10 + self.WHITE_KEY_HEIGHT - 18
+                cy = 10 + self.WHITE_KEY_HEIGHT - 14
                 note_cx[midi_note] = (cx, cy, False)
 
                 # Black key to the right of this white key
                 black_offsets = {0: 1, 1: 3, 3: 6, 4: 8, 5: 10}
                 if wi in black_offsets:
                     bx = x_pos + self.WHITE_KEY_WIDTH - self.BLACK_KEY_WIDTH // 2 + self.BLACK_KEY_WIDTH // 2
-                    by = 10 + self.BLACK_KEY_HEIGHT - 14
-                    note_cx[octave * 12 + black_offsets[wi]] = (bx, by, True)
+                    by = 10 + self.BLACK_KEY_HEIGHT - 10
+                    black_note = octave * 12 + black_offsets[wi]
+                    if self.FIRST_NOTE <= black_note <= self.LAST_NOTE:
+                        note_cx[black_note] = (bx, by, True)
 
                 x_pos += self.WHITE_KEY_WIDTH
 
         # Trailing C (mirrors _draw_piano)
         trailing_note = (self.END_OCTAVE + 1) * 12
-        note_cx[trailing_note] = (x_pos + self.WHITE_KEY_WIDTH // 2, 10 + self.WHITE_KEY_HEIGHT - 18, False)
+        if trailing_note <= self.LAST_NOTE:
+            note_cx[trailing_note] = (x_pos + self.WHITE_KEY_WIDTH // 2, 10 + self.WHITE_KEY_HEIGHT - 14, False)
 
         for ch, semitone in self._KB_ALL.items():
             extra_oct = semitone // 12
@@ -1416,20 +1431,25 @@ class PianoGUI:
     def _draw_c_labels(self):
         self.canvas.delete('c_label')
         transpose_octs = self.transpose // 12
+        white_midi_offsets = [0, 2, 4, 5, 7, 9, 11]
         x_pos = 10
-        for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
-            sounding_oct = (octave - 1) + transpose_octs
-            self.canvas.create_text(
-                x_pos + self.WHITE_KEY_WIDTH // 2, 22,
-                text=f"C{sounding_oct}", font=th.FONT_SMALL, fill=th.TEXT_SECONDARY, tags='c_label',
-            )
-            x_pos += len(self.WHITE_KEYS) * self.WHITE_KEY_WIDTH
-        # Trailing C
-        sounding_oct = self.END_OCTAVE + transpose_octs
-        self.canvas.create_text(
-            x_pos + self.WHITE_KEY_WIDTH // 2, 22,
-            text=f"C{sounding_oct}", font=th.FONT_SMALL, fill=th.TEXT_SECONDARY, tags='c_label',
-        )
+        # Track x_pos the same way _draw_piano does, skipping notes outside range
+        for octave in range(self.START_OCTAVE, self.END_OCTAVE + 2):
+            c_note = octave * 12
+            # Compute x_pos for this C by counting drawn white keys before it
+            # We'll place the label only if the C note is within range
+            if self.FIRST_NOTE <= c_note <= self.LAST_NOTE:
+                sounding_oct = octave + transpose_octs
+                self.canvas.create_text(
+                    x_pos + self.WHITE_KEY_WIDTH // 2, 18,
+                    text=f"C{sounding_oct}", font=th.FONT_SMALL, fill=th.TEXT_SECONDARY, tags='c_label',
+                )
+            # Advance x_pos past the 7 white keys in this octave (if within range)
+            if octave <= self.END_OCTAVE:
+                for wi in range(len(self.WHITE_KEYS)):
+                    midi_note = octave * 12 + white_midi_offsets[wi]
+                    if self.FIRST_NOTE <= midi_note <= self.LAST_NOTE:
+                        x_pos += self.WHITE_KEY_WIDTH
 
     def _draw_piano_jewelry(self, canvas_w: int, canvas_h: int):
         """Draw decorative accents on the piano canvas itself."""
@@ -1471,7 +1491,9 @@ class PianoGUI:
         for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
             for white_key_idx in range(len(self.WHITE_KEYS)):
                 midi_note = self._get_midi_note(white_key_idx, octave)
-                
+                if midi_note < self.FIRST_NOTE or midi_note > self.LAST_NOTE:
+                    continue
+
                 key_id = self.canvas.create_rectangle(
                     x_pos, 10,
                     x_pos + self.WHITE_KEY_WIDTH, 10 + self.WHITE_KEY_HEIGHT,
@@ -1482,58 +1504,53 @@ class PianoGUI:
                 self.note_key_map[midi_note] = key_id
                 x_pos += self.WHITE_KEY_WIDTH
 
-        # Trailing C one octave above END_OCTAVE
+        # Trailing C8 (MIDI 108)
         trailing_note = (self.END_OCTAVE + 1) * 12
-        key_id = self.canvas.create_rectangle(
-            x_pos, 10,
-            x_pos + self.WHITE_KEY_WIDTH, 10 + self.WHITE_KEY_HEIGHT,
-            fill='#F0F0F2', outline='#0A0A0E', width=1
-        )
-        self.key_map[key_id] = trailing_note
-        self.note_key_map[trailing_note] = key_id
+        if trailing_note <= self.LAST_NOTE:
+            key_id = self.canvas.create_rectangle(
+                x_pos, 10,
+                x_pos + self.WHITE_KEY_WIDTH, 10 + self.WHITE_KEY_HEIGHT,
+                fill='#F0F0F2', outline='#0A0A0E', width=1
+            )
+            self.key_map[key_id] = trailing_note
+            self.note_key_map[trailing_note] = key_id
 
         self._draw_c_labels()
 
         # Draw black keys on top
         x_pos = 10
-        
+
         for octave in range(self.START_OCTAVE, self.END_OCTAVE + 1):
             for white_key_idx in range(len(self.WHITE_KEYS)):
+                white_note = self._get_midi_note(white_key_idx, octave)
                 # Check if there's a black key after this white key
-                black_key_name = None
                 black_key_midi_offset = 0
-                
-                if white_key_idx == 0:  # C -> C#
-                    black_key_name = 'C#'
-                    black_key_midi_offset = 1
-                elif white_key_idx == 1:  # D -> D#
-                    black_key_name = 'D#'
-                    black_key_midi_offset = 3
-                elif white_key_idx == 3:  # F -> F#
-                    black_key_name = 'F#'
-                    black_key_midi_offset = 6
-                elif white_key_idx == 4:  # G -> G#
-                    black_key_name = 'G#'
-                    black_key_midi_offset = 8
-                elif white_key_idx == 5:  # A -> A#
-                    black_key_name = 'A#'
-                    black_key_midi_offset = 10
-                
-                # Draw black key if it exists
-                if black_key_name:
-                    black_x = x_pos + self.WHITE_KEY_WIDTH - self.BLACK_KEY_WIDTH // 2
-                    midi_note = octave * 12 + black_key_midi_offset
-                    
-                    key_id = self.canvas.create_rectangle(
-                        black_x, 10,
-                        black_x + self.BLACK_KEY_WIDTH, 10 + self.BLACK_KEY_HEIGHT,
-                        fill='#0A0A0E', outline=th.BORDER_SUBTLE, width=1
-                    )
-                    
-                    self.key_map[key_id] = midi_note
-                    self.note_key_map[midi_note] = key_id
+                has_black = False
 
-                x_pos += self.WHITE_KEY_WIDTH
+                if white_key_idx == 0:    # C -> C#
+                    has_black = True; black_key_midi_offset = 1
+                elif white_key_idx == 1:  # D -> D#
+                    has_black = True; black_key_midi_offset = 3
+                elif white_key_idx == 3:  # F -> F#
+                    has_black = True; black_key_midi_offset = 6
+                elif white_key_idx == 4:  # G -> G#
+                    has_black = True; black_key_midi_offset = 8
+                elif white_key_idx == 5:  # A -> A#
+                    has_black = True; black_key_midi_offset = 10
+
+                if white_note >= self.FIRST_NOTE and white_note <= self.LAST_NOTE:
+                    if has_black:
+                        black_x = x_pos + self.WHITE_KEY_WIDTH - self.BLACK_KEY_WIDTH // 2
+                        midi_note = octave * 12 + black_key_midi_offset
+                        if self.FIRST_NOTE <= midi_note <= self.LAST_NOTE:
+                            key_id = self.canvas.create_rectangle(
+                                black_x, 10,
+                                black_x + self.BLACK_KEY_WIDTH, 10 + self.BLACK_KEY_HEIGHT,
+                                fill='#0A0A0E', outline=th.BORDER_SUBTLE, width=1
+                            )
+                            self.key_map[key_id] = midi_note
+                            self.note_key_map[midi_note] = key_id
+                    x_pos += self.WHITE_KEY_WIDTH
     
     def _on_mouse_down(self, event):
         """Handle mouse down event."""

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import src.piano_gui; print\\('Import OK'\\)\")",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
