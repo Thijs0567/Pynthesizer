@@ -1,6 +1,7 @@
 """
 Main entry point for the synthesizer — GUI piano with optional MIDI input.
 """
+import os
 import sys
 import tkinter as tk
 from threading import Thread
@@ -17,8 +18,16 @@ def main():
     BLOCKSIZE = 2048
     MAX_VOICES = 16
 
+    asio_device = AudioEngine.find_asio_device()
+    if asio_device is not None:
+        BLOCKSIZE = 256
+        print(f"ASIO device found (index {asio_device}), using blocksize {BLOCKSIZE}")
+    else:
+        print("No ASIO device found, using default output")
+
     synth = Synthesizer(sample_rate=SAMPLE_RATE, max_voices=MAX_VOICES)
-    audio_engine = AudioEngine(sample_rate=SAMPLE_RATE, blocksize=BLOCKSIZE, channels=2)
+    audio_engine = AudioEngine(sample_rate=SAMPLE_RATE, blocksize=BLOCKSIZE, channels=2,
+                               device=asio_device)
 
     level_info = {'current': 0.0, 'peak': 0.0, 'clipping': False}
 

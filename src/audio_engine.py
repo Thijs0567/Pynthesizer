@@ -100,3 +100,11 @@ class AudioEngine:
         devices = sd.query_devices()
         for i, device in enumerate(devices):
             print(f"  {i}: {device['name']} ({device['max_output_channels']} out)")
+
+    @staticmethod
+    def find_asio_device() -> int | None:
+        """Return the index of the first ASIO output device, or None."""
+        for i, dev in enumerate(sd.query_devices()):
+            if "asio" in dev["name"].lower() and dev["max_output_channels"] > 0:
+                return i
+        return None
