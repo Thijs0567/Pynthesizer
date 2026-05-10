@@ -16,7 +16,7 @@ from src.piano_gui import PianoGUI
 def main():
     SAMPLE_RATE = 44100
     BLOCKSIZE = 2048
-    MAX_VOICES = 16
+    MAX_VOICES = 96
 
     asio_device = AudioEngine.find_asio_device()
     if asio_device is not None:

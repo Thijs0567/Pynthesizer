@@ -16,7 +16,7 @@ class Synthesizer:
     # MIDI note to frequency lookup
     A4_FREQUENCY = 440.0
     
-    def __init__(self, sample_rate: int = 44100, max_voices: int = 16):
+    def __init__(self, sample_rate: int = 44100, max_voices: int = 96):
         """
         Initialize the synthesizer.
         

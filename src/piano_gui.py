@@ -1620,4 +1620,4 @@ class PianoGUI:
     
     def update_voice_count(self, count: int):
         """Update the active voice count display."""
-        self.info_label.config(text=f"Active voices: {count} / 16")
+        self.info_label.config(text=f"Active voices: {count} / 96")
