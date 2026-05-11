@@ -219,20 +219,10 @@ class PianoGUI:
         self.root.bind('<space>',      lambda _: self._on_panic())
 
     def _kb_shift(self, direction: int):
-        """Shift kb_octave by direction (±1). If at limit, transpose by ±12 instead."""
         new_oct = self.kb_octave + direction
-        if self.START_OCTAVE <= new_oct <= self.END_OCTAVE - 1:
+        if self.START_OCTAVE <= new_oct <= self.END_OCTAVE:
             self.kb_octave = new_oct
             self._draw_kb_labels()
-        else:
-            # At octave limit — try transposing by one octave
-            cur_octs = self.transpose_scale.get()
-            new_octs = cur_octs + direction
-            if -2 <= new_octs <= 2:
-                self.transpose_scale.set(new_octs)
-                self.transpose = new_octs * 12
-                self.transpose_label.config(text=f"{new_octs:+d} oct")
-                self._draw_c_labels()
 
     def _on_key_press(self, event):
         ch = event.char.lower() if event.char else ''
